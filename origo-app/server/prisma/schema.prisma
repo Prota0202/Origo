@@ -1,0 +1,151 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StatutCommande {
+  EN_ATTENTE // client a validé, rien n'est encore sorti de l'entrepôt
+  EN_COURS_DE_PREPARATION // le préparateur a commencé à cocher la checklist
+  EXPEDIEE // checklist 100% cochée, stock_physique décrémenté
+  ANNULEE
+}
+
+enum TypeMouvement {
+  ENTREE_FOURNISSEUR
+  SORTIE_COMMANDE
+  RETOUR_ANNULATION
+  AJUSTEMENT_INVENTAIRE // casse, perte, correction d'inventaire manuelle
+}
+
+enum RoleUtilisateur {
+  ADMIN
+  PREPARATEUR
+}
+
+model Client {
+  id             Int            @id @default(autoincrement())
+  nom            String
+  ville          String?
+  codeClient     String         @unique
+  motDePasseHash String
+  email          String?
+  minCartons     Int            @default(5)
+  actif          Boolean        @default(true)
+  catalogue      CatalogEntry[]
+  orders         Order[]
+  createdAt      DateTime       @default(now())
+}
+
+model Product {
+  id               Int             @id @default(autoincrement())
+  nom              String
+  description      String?
+  categorie        String
+  unitesParCarton  Int
+  prixCartonDefaut Decimal         @db.Decimal(10, 2)
+  stockPhysique    Int             @default(0)
+  seuilAlerte      Int             @default(10)
+  photoUrl         String?
+  actif            Boolean         @default(true)
+  catalogue        CatalogEntry[]
+  orderItems       OrderItem[]
+  stockMovements   StockMovement[]
+  notifications    Notification[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([categorie])
+}
+
+// Catalogue personnalisé : quels produits + quel prix négocié pour chaque client
+model CatalogEntry {
+  id          Int      @id @default(autoincrement())
+  client      Client   @relation(fields: [clientId], references: [id])
+  clientId    Int
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   Int
+  prixNegocie Decimal? @db.Decimal(10, 2) // NULL = tarif catalogue par défaut
+  visible     Boolean  @default(true)
+
+  @@unique([clientId, productId])
+}
+
+model Order {
+  id                  Int             @id @default(autoincrement())
+  numero              String          @unique
+  client              Client          @relation(fields: [clientId], references: [id])
+  clientId            Int
+  statut              StatutCommande  @default(EN_ATTENTE)
+  cartonsTotal        Int
+  totalHT             Decimal         @db.Decimal(10, 2)
+  payee               Boolean         @default(false)
+  dateLivraisonPrevue DateTime?
+  items               OrderItem[]
+  stockMovements      StockMovement[]
+  createdAt           DateTime        @default(now())
+  expedieeLe          DateTime?
+  annuleeLe           DateTime?
+  motifAnnulation     String?
+
+  @@index([statut])
+  @@index([clientId])
+}
+
+model OrderItem {
+  id                   Int       @id @default(autoincrement())
+  order                Order     @relation(fields: [orderId], references: [id])
+  orderId              Int
+  product              Product   @relation(fields: [productId], references: [id])
+  productId            Int
+  quantiteCartons      Int
+  prixUnitaireApplique Decimal   @db.Decimal(10, 2) // snapshot au moment de la commande
+  coche                Boolean   @default(false)
+  cocheLe              DateTime?
+  cochePar             Int?
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// Journal d'audit append-only : toute variation du stock physique laisse une trace
+model StockMovement {
+  id         Int           @id @default(autoincrement())
+  product    Product       @relation(fields: [productId], references: [id])
+  productId  Int
+  type       TypeMouvement
+  quantite   Int // positif (entrée) ou négatif (sortie)
+  order      Order?        @relation(fields: [orderId], references: [id])
+  orderId    Int?
+  stockApres Int // snapshot du stock_physique juste après ce mouvement
+  createdAt  DateTime      @default(now())
+  createdPar Int?
+
+  @@index([productId])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  product   Product  @relation(fields: [productId], references: [id])
+  productId Int
+  type      String // 'STOCK_BAS' | 'RUPTURE'
+  message   String
+  lue       Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([productId, lue])
+}
+
+model Utilisateur {
+  id   Int             @id @default(autoincrement())
+  nom  String
+  role RoleUtilisateur
+}
