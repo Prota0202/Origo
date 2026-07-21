@@ -26,6 +26,14 @@ export default defineConfig({
   ],
   server: {
     host: true,
+    // Tunnels Cloudflare (partager.ps1) changent d’URL à chaque lancement
+    allowedHosts: ['.trycloudflare.com', 'localhost'],
     port: Number(process.env.PORT) || 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 })

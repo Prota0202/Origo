@@ -1,7 +1,12 @@
 import { useState } from 'react'
-import { X, Minus, Plus, Check, PackageX, Camera, RotateCcw } from 'lucide-react'
+import { X, Minus, Plus, Check, PackageX, Camera, RotateCcw, ImagePlus } from 'lucide-react'
 import { euros } from '../data.js'
 import { redimensionnerImage } from '../image.js'
+
+function estMobile() {
+  if (typeof navigator === 'undefined') return false
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
 
 // Checklist livreur : chaque ligne démarre à la quantité commandée (cas le
 // plus fréquent), le livreur n'ajuste que les lignes où tout n'a pas pu être
@@ -14,6 +19,7 @@ export default function ConfirmerLivraison({ commande, onValider, onClose }) {
   )
   const [photo, setPhoto] = useState(null)
   const [erreurPhoto, setErreurPhoto] = useState(null)
+  const mobile = estMobile()
 
   const changerQty = (id, qty, max) => {
     setQuantites((prev) => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
@@ -45,6 +51,16 @@ export default function ConfirmerLivraison({ commande, onValider, onClose }) {
     const resultats = commande.lignes.map((l) => ({ id: l.id, qty: quantites[l.id] }))
     onValider(resultats, photo)
   }
+
+  const inputPhoto = (avecCapture) => (
+    <input
+      type="file"
+      accept="image/*"
+      {...(avecCapture ? { capture: 'environment' } : {})}
+      onChange={capturerPhoto}
+      style={{ display: 'none' }}
+    />
+  )
 
   return (
     <>
@@ -100,27 +116,24 @@ export default function ConfirmerLivraison({ commande, onValider, onClose }) {
               <img src={photo} alt="Photo de livraison" />
               <label className="photo-suppr" style={{ cursor: 'pointer' }}>
                 <RotateCcw size={16} /> Reprendre
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={capturerPhoto}
-                  style={{ display: 'none' }}
-                />
+                {inputPhoto(false)}
               </label>
             </div>
           ) : (
-            <label className="photo-vide">
-              <Camera size={22} aria-hidden="true" />
-              <span>Prendre une photo de la livraison</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={capturerPhoto}
-                style={{ display: 'none' }}
-              />
-            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {mobile && (
+                <label className="photo-vide">
+                  <Camera size={22} aria-hidden="true" />
+                  <span>Prendre une photo</span>
+                  {inputPhoto(true)}
+                </label>
+              )}
+              <label className="photo-vide">
+                <ImagePlus size={22} aria-hidden="true" />
+                <span>{mobile ? 'Choisir depuis la galerie' : 'Choisir une photo (fichier ou galerie)'}</span>
+                {inputPhoto(false)}
+              </label>
+            </div>
           )}
           {erreurPhoto && <p className="erreur-photo">{erreurPhoto}</p>}
         </div>

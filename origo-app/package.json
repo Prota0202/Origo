@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "npm --prefix server run dev",
+    "setup:api": "npm --prefix server run setup",
+    "db:up": "docker compose up -d",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"

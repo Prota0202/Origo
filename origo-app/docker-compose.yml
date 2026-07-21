@@ -1,0 +1,54 @@
+# ORIGO — stack complète (API + Postgres)
+# Usage après reboot WSL/Docker : docker compose up -d --build
+#
+# Variables (optionnel) dans un fichier .env à la racine origo-app/ :
+#   JWT_SECRET=...
+#   COMPANY_ADDRESS=...
+#   COMPANY_VAT=BE0...
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: origo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: origo
+      POSTGRES_PASSWORD: origo
+      POSTGRES_DB: origo
+    ports:
+      - "5432:5432"
+    volumes:
+      - origo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U origo -d origo"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: origo-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://origo:origo@db:5432/origo?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-moi-en-production-origo}
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      COMPANY_NAME: ${COMPANY_NAME:-ORIGO}
+      COMPANY_ADDRESS: ${COMPANY_ADDRESS:-Belgique}
+      COMPANY_EMAIL: ${COMPANY_EMAIL:-pro@origo.be}
+      COMPANY_PHONE: ${COMPANY_PHONE:-+32 2 000 00 00}
+      COMPANY_VAT: ${COMPANY_VAT:-BE0000000000}
+      TVA_RATE: ${TVA_RATE:-0.21}
+    ports:
+      - "3001:3001"
+
+volumes:
+  origo_pg:

@@ -6,9 +6,18 @@ export default function Login({ onLogin }) {
   const [motDePasse, setMotDePasse] = useState('')
   const [erreur, setErreur] = useState(null)
 
-  const connecter = (e) => {
+  const [loading, setLoading] = useState(false)
+
+  const connecter = async (e) => {
     e.preventDefault()
-    setErreur(onLogin(code, motDePasse))
+    setLoading(true)
+    setErreur(null)
+    try {
+      const err = await onLogin(code, motDePasse)
+      if (err) setErreur(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -55,8 +64,8 @@ export default function Login({ onLogin }) {
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary">
-          <LogIn size={18} aria-hidden="true" /> Se connecter
+        <button type="submit" className="btn btn-primary" disabled={loading}>
+          <LogIn size={18} aria-hidden="true" /> {loading ? 'Connexion…' : 'Se connecter'}
         </button>
 
         <p className="login-aide">

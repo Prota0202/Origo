@@ -27,6 +27,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  scroll-padding-bottom: calc(var(--tabbar-h) + 24px);
 }
 
 body {
@@ -233,12 +234,13 @@ a:focus-visible {
   width: 100%;
   max-width: 1024px;
   margin: 0 auto;
-  padding: 20px 16px calc(var(--tabbar-h) + 24px);
+  /* Espace sous le contenu pour que les boutons ne passent jamais sous la tabbar */
+  padding: 20px 16px calc(var(--tabbar-h) + 56px);
 }
 
 @media (min-width: 768px) {
   .main {
-    padding: 28px 32px calc(var(--tabbar-h) + 32px);
+    padding: 28px 32px calc(var(--tabbar-h) + 64px);
   }
 }
 
@@ -456,9 +458,12 @@ a:focus-visible {
   border-top: 1px solid var(--gray-200);
   display: flex;
   justify-content: space-around;
+  /* Les zones vides laissent passer les clics au contenu (évite de bloquer) */
+  pointer-events: none;
 }
 
 .tab {
+  pointer-events: auto;
   flex: 1;
   max-width: 200px;
   display: flex;

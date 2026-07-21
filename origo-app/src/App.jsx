@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, ReceiptText, Headset, ShoppingCart, QrCode, CheckCircle2, LogOut, PackageSearch } from 'lucide-react'
-import { ADMINS, tarifLigne, formatPourcentage, DELAI_MODIFICATION_MS } from './data.js'
-import {
-  chargerProduits, chargerClients, sauverProduits, sauverClients, chargerDemandes, sauverDemandes,
-} from './store.js'
+import { tarifLigne, DELAI_MODIFICATION_MS } from './data.js'
+import { AuthApi, ProductsApi, ClientsApi, OrdersApi, setToken, clearSession, getToken } from './api/index.js'
 import Login from './components/Login.jsx'
 import Admin from './components/Admin.jsx'
 import Catalogue from './components/Catalogue.jsx'
@@ -20,11 +18,6 @@ const TABS = [
   { id: 'service', label: 'Service client', icon: Headset },
 ]
 
-const JOUR = 24 * 60 * 60 * 1000
-
-// Messages affichés au client quand sa commande change de statut, notamment
-// aux deux moments clés : acceptation par ORIGO ("Préparée") et départ du
-// livreur ("En livraison"). Les autres statuts gardent un message générique.
 const MESSAGE_STATUT = {
   Préparée: (numero) => `Commande ${numero} confirmée par ORIGO — en cours de préparation.`,
   'En livraison': (numero) => `Votre commande ${numero} est en cours de livraison !`,
@@ -34,63 +27,184 @@ const MESSAGE_STATUT = {
 }
 
 export default function App() {
-  const [produits, setProduits] = useState(chargerProduits)
-  const [clients, setClients] = useState(chargerClients)
-  const [sessionId, setSessionId] = useState(() => localStorage.getItem('origo-session'))
+  const [boot, setBoot] = useState(!!getToken())
+  const [user, setUser] = useState(null)
+  const [produits, setProduits] = useState([])
+  const [clients, setClients] = useState([])
+  const [commandes, setCommandes] = useState([])
+  const [commandesAdmin, setCommandesAdmin] = useState([])
+  const [demandes, setDemandes] = useState([])
   const [tab, setTab] = useState('catalogue')
   const [panier, setPanier] = useState({})
   const [panierOuvert, setPanierOuvert] = useState(false)
+  const panierOuvertRef = useRef(false)
   const [qrOuvert, setQrOuvert] = useState(false)
   const [toast, setToast] = useState(null)
-  const [commandes, setCommandes] = useState([])
   const [notifCommandes, setNotifCommandes] = useState(false)
-  const [demandes, setDemandes] = useState(chargerDemandes)
+  const [erreurBoot, setErreurBoot] = useState(null)
 
-  const admin = ADMINS.find((a) => a.id === sessionId) ?? null
-  const client = admin ? null : clients.find((c) => c.id === sessionId) ?? null
-
-  useEffect(() => sauverProduits(produits), [produits])
-  useEffect(() => sauverClients(clients), [clients])
-
-  // Charger les commandes du client connecté + notifier les changements de statut
   useEffect(() => {
-    if (!client?.id) return
-    let cmds = []
-    try {
-      cmds = JSON.parse(localStorage.getItem(`origo-commandes-${client.id}`)) ?? []
-    } catch {
-      cmds = []
-    }
-    setCommandes(cmds)
+    panierOuvertRef.current = panierOuvert
+  }, [panierOuvert])
 
-    const cleVu = `origo-vu-${client.id}`
+  const isStaff = user?.type === 'staff'
+  const client = user?.type === 'client' ? user : null
+  const admin = isStaff ? user : null
+
+  const showToast = (msg) => setToast(msg)
+
+  const chargerDonneesStaff = useCallback(async () => {
+    const [p, o] = await Promise.all([ProductsApi.list(), OrdersApi.all()])
+    setProduits(p)
+
+    let c = []
+    try {
+      c = await ClientsApi.list()
+      setClients(c)
+    } catch {
+      // Livreur n'a pas accès à la liste clients — on enrichit au minimum
+      setClients([])
+    }
+
+    const byId = Object.fromEntries(c.map((x) => [x.id, x]))
+    setCommandesAdmin(
+      o.map((cmd) => ({
+        ...cmd,
+        clientNom: cmd.client ?? byId[cmd.clientId]?.nom ?? cmd.client,
+        clientVille: byId[cmd.clientId]?.ville,
+      })),
+    )
+
+    try {
+      setDemandes(await ClientsApi.listDemandes())
+    } catch {
+      setDemandes([])
+    }
+  }, [])
+
+  const chargerDonneesClient = useCallback(async (clientUser) => {
+    const [p, o, d] = await Promise.all([
+      ProductsApi.list(),
+      OrdersApi.mine(),
+      ClientsApi.mesDemandes().catch(() => []),
+    ])
+    setProduits(p)
+    setCommandes(o)
+    setDemandes(d)
+
+    const cleVu = `origo-vu-${clientUser.id}`
     let vu = {}
     try {
       vu = JSON.parse(localStorage.getItem(cleVu)) ?? {}
     } catch {
       vu = {}
     }
-    const changees = cmds.filter((c) => vu[c.numero] && vu[c.numero] !== c.statut)
+    const changees = o.filter((c) => vu[c.numero] && vu[c.numero] !== c.statut)
     if (changees.length > 0) {
       setToast(
         changees.length === 1
           ? (MESSAGE_STATUT[changees[0].statut]?.(changees[0].numero) ??
               `Votre commande ${changees[0].numero} est passée au statut « ${changees[0].statut} »`)
-          : `${changees.length} commandes ont changé de statut`
+          : `${changees.length} commandes ont changé de statut`,
       )
       setNotifCommandes(true)
     }
-    localStorage.setItem(cleVu, JSON.stringify(Object.fromEntries(cmds.map((c) => [c.numero, c.statut]))))
-  }, [client?.id])
-
-  useEffect(() => {
-    if (!client?.id) return
-    localStorage.setItem(`origo-commandes-${client.id}`, JSON.stringify(commandes))
     localStorage.setItem(
-      `origo-vu-${client.id}`,
-      JSON.stringify(Object.fromEntries(commandes.map((c) => [c.numero, c.statut])))
+      cleVu,
+      JSON.stringify(Object.fromEntries(o.map((c) => [c.numero, c.statut]))),
     )
-  }, [client?.id, commandes])
+  }, [])
+
+  // Restaurer session JWT au démarrage (timeout pour ne jamais rester bloqué)
+  useEffect(() => {
+    let cancelled = false
+    const finBoot = () => {
+      if (!cancelled) setBoot(false)
+    }
+
+    if (!getToken()) {
+      finBoot()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const timeout = setTimeout(() => {
+      if (cancelled) return
+      clearSession()
+      setUser(null)
+      setErreurBoot('Connexion trop longue — reconnectez-vous.')
+      finBoot()
+    }, 10000)
+
+    ;(async () => {
+      try {
+        const me = await AuthApi.me()
+        if (cancelled) return
+        setUser(me)
+        if (me.type === 'staff') await chargerDonneesStaff()
+        else await chargerDonneesClient(me)
+      } catch {
+        clearSession()
+        if (!cancelled) setUser(null)
+      } finally {
+        clearTimeout(timeout)
+        finBoot()
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [chargerDonneesClient, chargerDonneesStaff])
+
+  // Polling léger des commandes (sync multi-appareils)
+  useEffect(() => {
+    if (!user) return
+    const tick = async () => {
+      try {
+        if (user.type === 'client') {
+          const o = await OrdersApi.mine()
+          setCommandes((prev) => {
+            const cleVu = `origo-vu-${user.id}`
+            let vu = {}
+            try {
+              vu = JSON.parse(localStorage.getItem(cleVu)) ?? {}
+            } catch {
+              /* ignore */
+            }
+            const changees = o.filter((c) => {
+              const avant = prev.find((p) => p.numero === c.numero)
+              return (avant && avant.statut !== c.statut) || (vu[c.numero] && vu[c.numero] !== c.statut)
+            })
+            if (changees.length > 0) {
+              setToast(
+                MESSAGE_STATUT[changees[0].statut]?.(changees[0].numero) ??
+                  `Commande ${changees[0].numero} : ${changees[0].statut}`,
+              )
+              setNotifCommandes(true)
+            }
+            localStorage.setItem(
+              cleVu,
+              JSON.stringify(Object.fromEntries(o.map((c) => [c.numero, c.statut]))),
+            )
+            return o
+          })
+          if (!panierOuvertRef.current) {
+            const p = await ProductsApi.list()
+            setProduits(p)
+          }
+        } else {
+          await chargerDonneesStaff()
+        }
+      } catch {
+        /* réseau temporaire */
+      }
+    }
+    const id = setInterval(tick, 15000)
+    return () => clearInterval(id)
+  }, [user, chargerDonneesStaff])
 
   useEffect(() => {
     if (!toast) return
@@ -98,52 +212,60 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Met à jour la fiche du client connecté (favoris, notes…)
-  const majClient = (patch) =>
-    setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, ...patch } : c)))
-
-  // Demande d'ajout d'un produit hors catalogue négocié — l'admin la traite
-  // pour fixer un tarif et l'ajouter au client, plutôt qu'un ajout direct au
-  // panier sans prix convenu.
-  const demanderProduit = (produit) => {
-    if (demandes.some((d) => d.clientId === client.id && d.produitId === produit.id)) {
-      setToast('Demande déjà envoyée pour ce produit.')
+  const majClient = async (patch) => {
+    if (!client) return
+    if (patch.favoris) {
+      const updated = await ClientsApi.setFavoris(patch.favoris)
+      setUser({ type: 'client', ...updated })
       return
     }
-    const demande = {
-      id: `${Date.now()}-${produit.id}`,
-      clientId: client.id,
-      clientNom: client.nom,
-      produitId: produit.id,
-      produitNom: produit.nom,
-      date: Date.now(),
+    if (patch.notes) {
+      const entries = Object.entries(patch.notes)
+      let updated = client
+      for (const [productId, texte] of entries) {
+        if (client.notes?.[productId] !== texte) {
+          updated = await ClientsApi.setNote(productId, texte ?? '')
+        }
+      }
+      setUser({ type: 'client', ...updated })
+      return
     }
-    setDemandes((prev) => {
-      const suivant = [...prev, demande]
-      sauverDemandes(suivant)
-      return suivant
-    })
-    setToast(`Demande envoyée à ORIGO pour « ${produit.nom} ».`)
+    setUser((u) => ({ ...u, ...patch }))
   }
 
-  // Retourne un message d'erreur, ou null si la connexion réussit
-  const seConnecter = (code, motDePasse) => {
-    const codeNorm = code.trim().toLowerCase()
-    const compte =
-      ADMINS.find((a) => a.code.toLowerCase() === codeNorm && a.motDePasse === motDePasse) ??
-      clients.find((c) => c.code.toLowerCase() === codeNorm && c.motDePasse === motDePasse)
-    if (!compte) return 'Code client ou mot de passe incorrect. Vérifiez vos identifiants ORIGO.'
-    localStorage.setItem('origo-session', compte.id)
-    setSessionId(compte.id)
-    setTab('catalogue')
-    setPanier({})
-    setNotifCommandes(false)
-    return null
+  const demanderProduit = async (produit) => {
+    try {
+      const d = await ClientsApi.demanderProduit(produit.id)
+      setDemandes((prev) => [...prev, d])
+      showToast(`Demande envoyée à ORIGO pour « ${produit.nom} ».`)
+    } catch (e) {
+      showToast(e.message)
+    }
+  }
+
+  const seConnecter = async (code, motDePasse) => {
+    try {
+      const { token, user: u } = await AuthApi.login(code, motDePasse)
+      setToken(token)
+      setUser(u)
+      setTab('catalogue')
+      setPanier({})
+      setNotifCommandes(false)
+      if (u.type === 'staff') await chargerDonneesStaff()
+      else await chargerDonneesClient(u)
+      return null
+    } catch (e) {
+      return e.message || 'Code client ou mot de passe incorrect.'
+    }
   }
 
   const seDeconnecter = () => {
-    localStorage.removeItem('origo-session')
-    setSessionId(null)
+    clearSession()
+    setUser(null)
+    setProduits([])
+    setClients([])
+    setCommandes([])
+    setCommandesAdmin([])
     setPanier({})
     setPanierOuvert(false)
   }
@@ -161,10 +283,9 @@ export default function App() {
     })
   }
 
-  // Recommander en 1 clic : re-remplit le panier avec la dernière commande
   const recommanderDerniere = () => {
     const derniere = commandes[0]
-    if (!derniere) return
+    if (!derniere || !client) return
     const next = {}
     const indisponibles = []
     derniere.lignes.forEach((l) => {
@@ -177,112 +298,100 @@ export default function App() {
     })
     setPanier(next)
     setPanierOuvert(true)
-    setToast(
+    showToast(
       indisponibles.length > 0
         ? `Panier re-rempli (indisponible : ${indisponibles.join(', ')})`
-        : 'Panier re-rempli à l’identique de votre dernière commande'
+        : 'Panier re-rempli à l’identique de votre dernière commande',
     )
   }
 
-  const validerCommande = (lignes, total, cartons) => {
-    const numero = `CMD-${String(commandes.length + 1).padStart(4, '0')}`
-    const ts = Date.now()
-    const commande = {
-      numero,
-      client: client.nom,
-      ts,
-      date: new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      livraisonPrevue: new Date(ts + 2 * JOUR).toLocaleDateString('fr-FR', {
-        weekday: 'long', day: 'numeric', month: 'long',
-      }),
-      lignes: lignes.map((p) => {
-        const t = tarifLigne(client, p, panier[p.id])
-        const suffixe = t.palierSeuil
-          ? ` (palier ${formatPourcentage(t.remisePct)} dès ${t.palierSeuil} cartons)`
-          : t.remisePct > 0
-            ? ` (remise −${t.remisePct} %)`
-            : ''
-        return {
-          id: p.id,
-          nom: `${p.nom}${suffixe}`,
-          prixCarton: t.puFinal,
-          qty: panier[p.id],
-          livree: null, // null = pas encore livrée, true/false = coché par le livreur
-        }
-      }),
-      cartons,
-      total,
-      statut: 'Confirmée',
-      payee: false,
+  const validerCommande = async () => {
+    try {
+      const lignes = Object.entries(panier).map(([productId, qty]) => ({ productId, qty }))
+      const commande = await OrdersApi.create(lignes)
+      setCommandes((prev) => [commande, ...prev])
+      const p = await ProductsApi.list()
+      setProduits(p)
+      setPanier({})
+      setPanierOuvert(false)
+      setTab('commandes')
+      showToast(`Commande ${commande.numero} confirmée`)
+    } catch (e) {
+      showToast(e.message)
     }
-    setCommandes((prev) => [commande, ...prev])
-    // Déstockage
-    setProduits((prev) =>
-      prev.map((p) => (panier[p.id] ? { ...p, stock: Math.max(0, (p.stock ?? 0) - panier[p.id]) } : p))
-    )
-    setPanier({})
-    setPanierOuvert(false)
-    setTab('commandes')
-    setToast(`Commande ${numero} confirmée — facture et bon de commande générés`)
-  }
-
-  // Réintègre au stock les cartons d'une commande annulée ou réduite
-  const restituerStock = (lignes) => {
-    setProduits((prev) =>
-      prev.map((p) => {
-        const l = lignes.find((x) => x.id === p.id)
-        return l ? { ...p, stock: (p.stock ?? 0) + l.qty } : p
-      })
-    )
   }
 
   const peutModifierSeul = (c) =>
     c.statut === 'Confirmée' && Date.now() - c.ts <= DELAI_MODIFICATION_MS
 
-  const annulerCommande = (commande) => {
-    if (!peutModifierSeul(commande)) return
-    restituerStock(commande.lignes)
-    setCommandes((prev) =>
-      prev.map((c) => (c.numero === commande.numero ? { ...c, statut: 'Annulée', annuleeLe: Date.now() } : c))
-    )
-    setToast(`Commande ${commande.numero} annulée`)
+  const annulerCommande = async (commande) => {
+    if (!peutModifierSeul(commande) || !commande.id) return
+    try {
+      const updated = await OrdersApi.annuler(commande.id)
+      setCommandes((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+      setProduits(await ProductsApi.list())
+      showToast(`Commande ${commande.numero} annulée`)
+    } catch (e) {
+      showToast(e.message)
+    }
   }
 
-  const modifierCommande = (commande, nouvellesLignes, nouveauTotal, nouveauxCartons) => {
-    if (!peutModifierSeul(commande)) return
-    // Ajuste le stock du delta entre l'ancienne et la nouvelle quantité par ligne
-    setProduits((prev) =>
-      prev.map((p) => {
-        const avant = commande.lignes.find((l) => l.id === p.id)?.qty ?? 0
-        const apres = nouvellesLignes.find((l) => l.id === p.id)?.qty ?? 0
-        const delta = apres - avant
-        return delta !== 0 ? { ...p, stock: Math.max(0, (p.stock ?? 0) - delta) } : p
-      })
-    )
-    setCommandes((prev) =>
-      prev.map((c) =>
-        c.numero === commande.numero
-          ? { ...c, lignes: nouvellesLignes, total: nouveauTotal, cartons: nouveauxCartons, modifieeLe: Date.now() }
-          : c
-      )
-    )
-    setToast(`Commande ${commande.numero} modifiée`)
+  const modifierCommande = async (commande, nouvellesLignes) => {
+    if (!peutModifierSeul(commande) || !commande.id) return
+    try {
+      const lignes = nouvellesLignes.map((l) => ({ productId: l.id, qty: l.qty }))
+      const updated = await OrdersApi.modifier(commande.id, lignes)
+      setCommandes((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+      setProduits(await ProductsApi.list())
+      showToast(`Commande ${commande.numero} modifiée`)
+    } catch (e) {
+      showToast(e.message)
+    }
   }
 
-  if (!sessionId || (!admin && !client)) {
-    return <Login onLogin={seConnecter} />
+  if (boot) {
+    return (
+      <div className="login-page">
+        <div className="login-hero">
+          <span className="logo">
+            origo<span className="logo-dot" aria-hidden="true" />
+          </span>
+          <p>Chargement…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Login onLogin={seConnecter} />
+        {erreurBoot && <div className="toast">{erreurBoot}</div>}
+      </>
+    )
   }
 
   if (admin) {
     return (
-      <Admin
-        admin={admin}
-        produits={produits}
-        setProduits={setProduits}
-        clients={clients}
-        setClients={setClients}
-        onLogout={seDeconnecter}
-      />
+      <>
+        <Admin
+          admin={admin}
+          produits={produits}
+          setProduits={setProduits}
+          clients={clients}
+          setClients={setClients}
+          commandesGlobales={commandesAdmin}
+          demandes={demandes}
+          onRefresh={chargerDonneesStaff}
+          onLogout={seDeconnecter}
+        />
+        {toast && (
+          <div className="toast" role="status">
+            <CheckCircle2 size={18} aria-hidden="true" />
+            {toast}
+          </div>
+        )}
+      </>
     )
   }
 
@@ -290,14 +399,24 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div>
-          <span className="logo">origo<span className="logo-dot" aria-hidden="true" /></span>
+          <span className="logo">
+            origo<span className="logo-dot" aria-hidden="true" />
+          </span>
           <span className="header-client">{client.nom}</span>
         </div>
         <div className="header-actions">
-          <button className="icon-btn" onClick={() => setQrOuvert(true)} aria-label="Afficher le QR code pour ouvrir sur mobile">
+          <button
+            className="icon-btn"
+            onClick={() => setQrOuvert(true)}
+            aria-label="Afficher le QR code pour ouvrir sur mobile"
+          >
             <QrCode size={22} />
           </button>
-          <button className="icon-btn" onClick={() => setPanierOuvert(true)} aria-label={`Ouvrir le panier, ${totalCartons} cartons`}>
+          <button
+            className="icon-btn"
+            onClick={() => setPanierOuvert(true)}
+            aria-label={`Ouvrir le panier, ${totalCartons} cartons`}
+          >
             <ShoppingCart size={22} />
             {totalCartons > 0 && <span className="badge">{totalCartons}</span>}
           </button>
@@ -351,7 +470,9 @@ export default function App() {
           >
             <span className="tab-icone">
               <Icon size={22} aria-hidden="true" />
-              {id === 'commandes' && notifCommandes && <span className="point-notif" aria-label="Nouveau statut" />}
+              {id === 'commandes' && notifCommandes && (
+                <span className="point-notif" aria-label="Nouveau statut" />
+              )}
             </span>
             {label}
           </button>
@@ -365,7 +486,18 @@ export default function App() {
           panier={panier}
           onChange={changerQuantite}
           onClose={() => setPanierOuvert(false)}
-          onValider={validerCommande}
+          onValider={() => {
+            const lignes = Object.keys(panier)
+              .map((id) => produits.find((p) => p.id === id))
+              .filter(Boolean)
+            const cartons = Object.values(panier).reduce((s, q) => s + q, 0)
+            const total = lignes.reduce((s, p) => s + tarifLigne(client, p, panier[p.id]).total, 0)
+            if (cartons < (client.minCartons ?? 5)) {
+              showToast(`Minimum ${client.minCartons} cartons`)
+              return
+            }
+            void validerCommande(lignes, total, cartons)
+          }}
         />
       )}
       {qrOuvert && <QRModal onClose={() => setQrOuvert(false)} />}

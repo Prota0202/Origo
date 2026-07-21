@@ -5,8 +5,8 @@ import {
   Crop, Ban, PackageCheck, Undo2, Truck, RotateCcw, Clock, Camera, Send, Check,
 } from 'lucide-react'
 import { euros, pourcentagePalier, formatPourcentage, DELAI_MODIFICATION_MS } from '../data.js'
-import { TVA } from '../pdf.js'
-import { chargerCommandesClient, sauverCommandesClient, chargerDemandes, sauverDemandes } from '../store.js'
+import { getTvaRate } from '../company.jsx'
+import { OrdersApi, ClientsApi, ProductsApi } from '../api/index.js'
 import { chargerImagePourRecadrage } from '../image.js'
 import AjusterPhoto from './AjusterPhoto.jsx'
 import ModifierCommande from './ModifierCommande.jsx'
@@ -17,8 +17,8 @@ const TOUS_TABS = [
   { id: 'dashboard', label: 'Tableau', icon: LayoutDashboard, roles: ['direction'] },
   { id: 'produits', label: 'Produits', icon: Package, roles: ['direction'] },
   { id: 'clients', label: 'Clients', icon: Users, roles: ['direction'] },
-  { id: 'commandes', label: 'Commandes', icon: ReceiptText, roles: ['direction', 'preparation'] },
-  { id: 'retours', label: 'Retours', icon: Undo2, roles: ['direction', 'preparation'] },
+  { id: 'commandes', label: 'Commandes', icon: ReceiptText, roles: ['direction', 'preparation', 'livreur'] },
+  { id: 'retours', label: 'Retours', icon: Undo2, roles: ['direction', 'preparation', 'livreur'] },
 ]
 
 const JOUR = 24 * 60 * 60 * 1000
@@ -27,10 +27,14 @@ const slug = (s) =>
   s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `id-${Date.now()}`
 
-const chargerToutes = (clients) =>
-  clients.flatMap((c) =>
-    chargerCommandesClient(c.id).map((cmd) => ({ ...cmd, clientId: c.id, clientNom: c.nom, clientVille: c.ville }))
-  )
+const STATUT_API = {
+  Préparée: 'PREPAREE',
+  'En livraison': 'EN_LIVRAISON',
+  Livrée: 'LIVREE',
+  'Livrée partiellement': 'LIVREE_PARTIELLEMENT',
+  Annulée: 'ANNULEE',
+  Confirmée: 'CONFIRMEE',
+}
 
 const formatRestant = (ms) => {
   const min = Math.max(0, Math.ceil(ms / 60000))
@@ -39,22 +43,24 @@ const formatRestant = (ms) => {
 }
 
 /* ---------- Tableau de bord ---------- */
-function Dashboard({ produits, clients, setClients }) {
-  const [toutes, setToutes] = useState([])
-  useEffect(() => setToutes(chargerToutes(clients)), [clients])
+function Dashboard({ produits, clients, setClients, commandesGlobales, demandes: demandesProp, onRefresh }) {
+  const toutes = commandesGlobales ?? []
+  const [demandes, setDemandes] = useState(demandesProp ?? [])
+  useEffect(() => setDemandes(demandesProp ?? []), [demandesProp])
 
-  const [demandes, setDemandes] = useState(chargerDemandes)
   // Demande en cours d'acceptation : on ne l'ajoute au client qu'une fois un
   // tarif fixé pour lui, jamais au prix catalogue par défaut sans y penser.
   const [demandeOuverte, setDemandeOuverte] = useState(null)
   const [prixPropose, setPrixPropose] = useState('')
 
-  const retirerDemande = (id) => {
-    setDemandes((prev) => {
-      const suivant = prev.filter((d) => d.id !== id)
-      sauverDemandes(suivant)
-      return suivant
-    })
+  const retirerDemande = async (id) => {
+    try {
+      await ClientsApi.traiterDemande(id)
+      setDemandes((prev) => prev.filter((d) => d.id !== id))
+      await onRefresh?.()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   const ouvrirAcceptation = (demande, produit) => {
@@ -62,22 +68,33 @@ function Dashboard({ produits, clients, setClients }) {
     setPrixPropose(String(produit?.prixCarton ?? ''))
   }
 
-  const validerAcceptation = (demande) => {
+  const validerAcceptation = async (demande) => {
     const valeur = Number(prixPropose)
     if (!(valeur > 0)) return
-    setClients((prev) =>
-      prev.map((c) => {
-        if (c.id !== demande.clientId) return c
-        const produits2 = c.produits.includes(demande.produitId) ? c.produits : [...c.produits, demande.produitId]
-        return { ...c, produits: produits2, prix: { ...(c.prix ?? {}), [demande.produitId]: valeur } }
-      })
-    )
-    retirerDemande(demande.id)
-    setDemandeOuverte(null)
+    const client = clients.find((c) => c.id === demande.clientId)
+    if (!client) return
+    const entries = [
+      ...client.produits
+        .filter((pid) => pid !== demande.produitId)
+        .map((productId) => ({
+          productId,
+          prixNegocie: client.prix?.[productId] ?? null,
+          visible: true,
+        })),
+      { productId: demande.produitId, prixNegocie: valeur, visible: true },
+    ]
+    try {
+      const updated = await ClientsApi.setCatalogue(client.id, entries)
+      setClients((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+      await retirerDemande(demande.id)
+      setDemandeOuverte(null)
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
-  const ignorerDemande = (demande) => {
-    retirerDemande(demande.id)
+  const ignorerDemande = async (demande) => {
+    await retirerDemande(demande.id)
     if (demandeOuverte === demande.id) setDemandeOuverte(null)
   }
 
@@ -88,7 +105,7 @@ function Dashboard({ produits, clients, setClients }) {
     return d.getMonth() === maintenant.getMonth() && d.getFullYear() === maintenant.getFullYear()
   })
   const caMois = duMois.reduce((s, c) => s + c.total, 0)
-  const enAttente = toutes.filter((c) => !c.payee).reduce((s, c) => s + c.total * (1 + TVA), 0)
+  const enAttente = toutes.filter((c) => !c.payee).reduce((s, c) => s + c.total * (1 + getTvaRate()), 0)
 
   // Top produits (cartons, tous temps)
   const parProduit = {}
@@ -114,7 +131,7 @@ function Dashboard({ produits, clients, setClients }) {
       ['Numéro', 'Client', 'Date', 'Cartons', 'Total HT', 'TVA', 'Total TTC', 'Statut', 'Payée'],
       ...duMois.map((c) => [
         c.numero, c.clientNom, c.date, c.cartons,
-        c.total.toFixed(2), (c.total * TVA).toFixed(2), (c.total * (1 + TVA)).toFixed(2),
+        c.total.toFixed(2), (c.total * getTvaRate()).toFixed(2), (c.total * (1 + getTvaRate())).toFixed(2),
         c.statut, c.payee ? 'Oui' : 'Non',
       ]),
     ]
@@ -430,27 +447,43 @@ function ProduitForm({ produit, categories, onSave, onClose }) {
 }
 
 /* ---------- Onglet Produits ---------- */
-function AdminProduits({ produits, setProduits, clients, setClients }) {
+function AdminProduits({ produits, setProduits, clients, setClients, onRefresh }) {
   const [form, setForm] = useState(null)
   const categories = [...new Set(produits.map((p) => p.categorie))]
 
-  const enregistrer = (p) => {
-    setProduits((prev) =>
-      prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]
-    )
-    setForm(null)
+  const enregistrer = async (p) => {
+    try {
+      const body = {
+        nom: p.nom,
+        description: p.description,
+        categorie: p.categorie,
+        unitesParCarton: Number(p.unitesParCarton),
+        prixCarton: Number(p.prixCarton),
+        stock: Number(p.stock ?? 0),
+        seuilAlerte: Number(p.seuilAlerte ?? 10),
+        photoUrl: p.photo ?? null,
+        remiseSeuil: p.remise?.seuil ?? null,
+        remisePourcent: p.remise?.pourcent ?? null,
+        sku: p.sku,
+      }
+      const exists = produits.some((x) => x.id === p.id)
+      if (exists) await ProductsApi.update(p.id, body)
+      else await ProductsApi.create(body)
+      await onRefresh?.()
+      setForm(null)
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
-  const supprimer = (p) => {
-    if (!window.confirm(`Supprimer « ${p.nom} » du catalogue ? Il sera retiré de tous les clients.`)) return
-    setProduits((prev) => prev.filter((x) => x.id !== p.id))
-    setClients((prev) =>
-      prev.map((c) => ({
-        ...c,
-        produits: c.produits.filter((id) => id !== p.id),
-        prix: Object.fromEntries(Object.entries(c.prix ?? {}).filter(([id]) => id !== p.id)),
-      }))
-    )
+  const supprimer = async (p) => {
+    if (!window.confirm(`Désactiver « ${p.nom} » du catalogue ?`)) return
+    try {
+      await ProductsApi.update(p.id, { actif: false })
+      await onRefresh?.()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   return (
@@ -608,8 +641,13 @@ function ClientForm({ client, produits, onSave, onClose }) {
               <input type="text" value={f.code} onChange={maj('code')} autoCapitalize="characters" required />
             </label>
             <label className="champ">
-              <span>Mot de passe</span>
-              <input type="text" value={f.motDePasse} onChange={maj('motDePasse')} required />
+              <span>Mot de passe{client ? ' (laisser vide = inchangé)' : ''}</span>
+              <input
+                type="text"
+                value={f.motDePasse ?? ''}
+                onChange={maj('motDePasse')}
+                required={!client}
+              />
             </label>
           </div>
           <div className="champ-row">
@@ -721,19 +759,56 @@ function ClientForm({ client, produits, onSave, onClose }) {
 }
 
 /* ---------- Onglet Clients ---------- */
-function AdminClients({ produits, clients, setClients }) {
+function AdminClients({ produits, clients, setClients, onRefresh }) {
   const [form, setForm] = useState(null)
 
-  const enregistrer = (c) => {
-    setClients((prev) =>
-      prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c]
-    )
-    setForm(null)
+  const enregistrer = async (c) => {
+    try {
+      const isNew = !clients.some((x) => x.id === c.id)
+      let saved
+      if (isNew) {
+        saved = await ClientsApi.create({
+          code: c.code,
+          motDePasse: c.motDePasse,
+          nom: c.nom,
+          ville: c.ville,
+          email: c.email,
+          minCartons: c.minCartons,
+          productIds: c.produits,
+        })
+      } else {
+        saved = await ClientsApi.update(c.id, {
+          nom: c.nom,
+          ville: c.ville,
+          email: c.email,
+          minCartons: c.minCartons,
+          ...(c.motDePasse ? { motDePasse: c.motDePasse } : {}),
+        })
+      }
+      const entries = (c.produits ?? []).map((productId) => ({
+        productId,
+        prixNegocie: c.prix?.[productId] ?? null,
+        visible: true,
+      }))
+      saved = await ClientsApi.setCatalogue(saved.id, entries)
+      for (const [productId, paliers] of Object.entries(c.paliers ?? {})) {
+        await ClientsApi.setPaliers(saved.id, productId, paliers)
+      }
+      await onRefresh?.()
+      setForm(null)
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
-  const supprimer = (c) => {
-    if (!window.confirm(`Supprimer le compte « ${c.nom} » ?`)) return
-    setClients((prev) => prev.filter((x) => x.id !== c.id))
+  const supprimer = async (c) => {
+    if (!window.confirm(`Désactiver le compte « ${c.nom} » ?`)) return
+    try {
+      await ClientsApi.update(c.id, { actif: false })
+      await onRefresh?.()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   return (
@@ -748,7 +823,12 @@ function AdminClients({ produits, clients, setClients }) {
       {clients.map((c) => (
         <article key={c.id} className="commande-card admin-ligne">
           <div className="ligne-infos">
-            <p className="ligne-nom">{c.nom}</p>
+            <p className="ligne-nom">
+              {c.nom}
+              {c.actif === false && (
+                <span className="statut statut-annulee" style={{ marginLeft: 8, fontSize: 11 }}>inactif</span>
+              )}
+            </p>
             <p className="ligne-detail">
               {c.ville} · code {c.code} · {c.produits.length} produits · min. {c.minCartons} cartons
               {Object.keys(c.prix ?? {}).length > 0 && ` · ${Object.keys(c.prix).length} prix négocié(s)`}
@@ -783,54 +863,19 @@ const CLASSE_STATUT = {
   Annulée: 'statut-annulee',
 }
 
-const sauverPatchCommande = (clients, setToutes, clientId, numero, patch) => {
-  const cmds = chargerCommandesClient(clientId).map((cmd) =>
-    cmd.numero === numero ? { ...cmd, ...patch } : cmd
-  )
-  sauverCommandesClient(clientId, cmds)
-  setToutes(chargerToutes(clients))
+const appliquerStatutApi = async (cmd, statutUi, extras = {}) => {
+  if (!cmd.id) throw new Error('Commande sans id API')
+  const statut = STATUT_API[statutUi]
+  if (!statut) throw new Error(`Statut inconnu : ${statutUi}`)
+  return OrdersApi.setStatut(cmd.id, { statut, ...extras })
 }
 
-const restituerStock = (setProduits, lignes) => {
-  setProduits((prev) =>
-    prev.map((p) => {
-      const l = lignes.find((x) => x.id === p.id)
-      return l ? { ...p, stock: (p.stock ?? 0) + l.qty } : p
-    })
-  )
-}
-
-// Retour après livraison : seules les lignes marquées "bon état" réintègrent
-// le stock, le reste (casse, périmé…) est simplement retiré de la commande.
-// Logique partagée entre l'onglet Commandes (Direction, action ponctuelle) et
-// l'onglet Retours (Direction + Préparation, pensé pour la fin de tournée).
-const appliquerRetour = (setProduits, majCommande, cmd, lignesRetour, motif) => {
-  const aRestituer = lignesRetour.filter((l) => l.remisEnStock)
-  if (aRestituer.length > 0) restituerStock(setProduits, aRestituer)
-
-  const nouvellesLignes = cmd.lignes.map((l) => {
-    const retour = lignesRetour.find((r) => r.id === l.id)
-    return retour ? { ...l, qty: l.qty - retour.qty } : l
-  })
-  const cartons = nouvellesLignes.reduce((s, l) => s + l.qty, 0)
-  const total = nouvellesLignes.reduce((s, l) => s + l.qty * l.prixCarton, 0)
-
-  majCommande(cmd.clientId, cmd.numero, {
-    lignes: nouvellesLignes,
-    cartons,
-    total,
-    retours: [...(cmd.retours ?? []), { date: Date.now(), motif, lignes: lignesRetour }],
-  })
-}
-
-function AdminCommandes({ admin, clients, produits, setProduits }) {
-  const [toutes, setToutes] = useState([])
+function AdminCommandes({ admin, clients, produits, setProduits, commandesGlobales, onRefresh }) {
+  const toutes = commandesGlobales ?? []
   const [vue, setVue] = useState('liste') // 'liste' | 'tournees'
   const [modifierCible, setModifierCible] = useState(null)
   const [livraisonCible, setLivraisonCible] = useState(null)
   const [maintenant, setMaintenant] = useState(() => Date.now())
-
-  useEffect(() => setToutes(chargerToutes(clients)), [clients])
 
   // Fait avancer le compte à rebours de correction pour la Préparation, sans
   // qu'elle ait besoin de recharger la page.
@@ -839,15 +884,32 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
     return () => clearInterval(t)
   }, [])
 
-  const majCommande = (clientId, numero, patch) => sauverPatchCommande(clients, setToutes, clientId, numero, patch)
+  const refresh = async () => {
+    await onRefresh?.()
+    setProduits(await ProductsApi.list())
+  }
 
   // Chaque étape du pipeline (Confirmée → Préparée → En livraison → Livrée)
   // a son propre bouton explicite dans la liste, plutôt qu'un badge de statut
   // cliquable qui faisait plusieurs choses différentes selon l'état — plus
   // clair pour la Préparation comme pour la Direction.
-  const accepterCommande = (cmd) => majCommande(cmd.clientId, cmd.numero, { statut: 'Préparée', accepteeLe: Date.now() })
+  const accepterCommande = async (cmd) => {
+    try {
+      await appliquerStatutApi(cmd, 'Préparée')
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
+  }
 
-  const demarrerTournee = (cmd) => majCommande(cmd.clientId, cmd.numero, { statut: 'En livraison', enLivraisonLe: Date.now() })
+  const demarrerTournee = async (cmd) => {
+    try {
+      await appliquerStatutApi(cmd, 'En livraison')
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
+  }
 
   // La Direction peut toujours revenir en arrière/modifier/annuler une
   // commande livrée. La Préparation (le livreur) ne le peut que dans l'heure
@@ -858,38 +920,39 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
     !!cmd.livreeLe && maintenant - cmd.livreeLe <= DELAI_MODIFICATION_MS
   const peutToucherLivree = (cmd) => admin.role === 'direction' || modifiableApresLivraison(cmd)
 
-  const rouvrirCommande = (cmd) => {
-    if (!peutToucherLivree(cmd)) return
-    majCommande(cmd.clientId, cmd.numero, { statut: 'Confirmée' })
+  const basculerPayee = async (cmd) => {
+    try {
+      await OrdersApi.setPayee(cmd.id, !cmd.payee)
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
   }
-
-  const basculerPayee = (cmd) => majCommande(cmd.clientId, cmd.numero, { payee: !cmd.payee })
 
   // L'admin peut modifier/annuler une commande à tout moment, sans limite de
   // temps ni condition de statut (contrairement au client) — utile pour
   // corriger une erreur même après le début de préparation.
-  const annulerCommande = (cmd) => {
+  const annulerCommande = async (cmd) => {
     if (cmd.statut === 'Annulée') return
     if (!window.confirm(`Annuler la commande ${cmd.numero} de ${cmd.clientNom} ? Le stock sera réintégré.`)) return
-    restituerStock(setProduits, cmd.lignes)
-    majCommande(cmd.clientId, cmd.numero, { statut: 'Annulée', annuleeLe: Date.now() })
+    try {
+      await OrdersApi.annulerAdmin(cmd.id)
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
-  const modifierCommande = (cmd, nouvellesLignes, nouveauTotal, nouveauxCartons) => {
-    setProduits((prev) =>
-      prev.map((p) => {
-        const avant = cmd.lignes.find((l) => l.id === p.id)?.qty ?? 0
-        const apres = nouvellesLignes.find((l) => l.id === p.id)?.qty ?? 0
-        const delta = apres - avant
-        return delta !== 0 ? { ...p, stock: Math.max(0, (p.stock ?? 0) - delta) } : p
-      })
-    )
-    majCommande(cmd.clientId, cmd.numero, {
-      lignes: nouvellesLignes,
-      total: nouveauTotal,
-      cartons: nouveauxCartons,
-      modifieeLe: Date.now(),
-    })
+  const modifierCommande = async (cmd, nouvellesLignes) => {
+    try {
+      await OrdersApi.modifierAdmin(
+        cmd.id,
+        nouvellesLignes.map((l) => ({ productId: l.id, qty: l.qty })),
+      )
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   // Checklist du livreur : la quantité livrée par ligne peut être réduite
@@ -897,33 +960,37 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
   // et n'est pas facturé. "qtyCommandee" garde la quantité d'origine pour
   // affichage tant qu'il y a un écart ; la commande passe "Livrée
   // partiellement" dès qu'une ligne n'est pas livrée en totalité.
-  const confirmerLivraison = (cmd, resultats, photo) => {
-    const manquants = cmd.lignes
+  const confirmerLivraison = async (cmd, resultats, photo) => {
+    const lignesLivrees = cmd.lignes
+      .filter((l) => l.itemId)
       .map((l) => {
         const qtyLivree = resultats.find((r) => r.id === l.id)?.qty ?? l.qty
-        const manquant = l.qty - qtyLivree
-        return manquant > 0 ? { id: l.id, qty: manquant } : null
+        return { itemId: l.itemId, qtyLivree }
       })
-      .filter(Boolean)
-    if (manquants.length > 0) restituerStock(setProduits, manquants)
-
-    const nouvellesLignes = cmd.lignes.map((l) => {
+    const manquants = cmd.lignes.some((l) => {
       const qtyLivree = resultats.find((r) => r.id === l.id)?.qty ?? l.qty
-      if (qtyLivree >= l.qty) return { ...l, livree: true }
-      return { ...l, qty: qtyLivree, qtyCommandee: l.qty, livree: qtyLivree > 0 ? 'partielle' : false }
+      return qtyLivree < l.qty
     })
-    const cartonsLivres = nouvellesLignes.reduce((s, l) => s + l.qty, 0)
-    const totalLivre = nouvellesLignes.reduce((s, l) => s + l.qty * l.prixCarton, 0)
+    try {
+      await appliquerStatutApi(cmd, manquants ? 'Livrée partiellement' : 'Livrée', {
+        photoLivraisonUrl: photo || null,
+        lignesLivrees,
+      })
+      await refresh()
+      setLivraisonCible(null)
+    } catch (e) {
+      alert(e.message)
+    }
+  }
 
-    majCommande(cmd.clientId, cmd.numero, {
-      lignes: nouvellesLignes,
-      cartons: cartonsLivres,
-      total: totalLivre,
-      statut: manquants.length > 0 ? 'Livrée partiellement' : 'Livrée',
-      livreeLe: Date.now(),
-      photoLivraison: photo,
-    })
-    setLivraisonCible(null)
+  const rouvrirCommande = async (cmd) => {
+    if (!peutToucherLivree(cmd)) return
+    try {
+      await appliquerStatutApi(cmd, 'Confirmée')
+      await refresh()
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   // Triées par ancienneté (la plus vieille commande d'abord) : une ville
@@ -1016,14 +1083,16 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
                   )
                 )}
                 <div className="commande-actions" style={{ marginTop: 10 }}>
-                  <button
-                    className={`btn ${cmd.payee ? 'btn-ghost' : 'btn-secondary'}`}
-                    onClick={() => basculerPayee(cmd)}
-                    aria-pressed={cmd.payee}
-                  >
-                    <Euro size={16} aria-hidden="true" />
-                    {cmd.payee ? 'Payée ✓' : 'Marquer payée'}
-                  </button>
+                  {admin.role === 'direction' && (
+                    <button
+                      className={`btn ${cmd.payee ? 'btn-ghost' : 'btn-secondary'}`}
+                      onClick={() => basculerPayee(cmd)}
+                      aria-pressed={cmd.payee}
+                    >
+                      <Euro size={16} aria-hidden="true" />
+                      {cmd.payee ? 'Payée ✓' : 'Marquer payée'}
+                    </button>
+                  )}
                   {cmd.statut === 'Confirmée' && (
                     <button className="btn btn-primary" onClick={() => accepterCommande(cmd)}>
                       <ClipboardCheck size={16} aria-hidden="true" /> Accepter la commande
@@ -1039,12 +1108,15 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
                       <PackageCheck size={16} aria-hidden="true" /> Confirmer la livraison
                     </button>
                   )}
-                  {['Livrée', 'Livrée partiellement'].includes(cmd.statut) && peutToucherLivree(cmd) && (
-                    <button className="btn btn-ghost" onClick={() => rouvrirCommande(cmd)}>
-                      <RotateCcw size={16} aria-hidden="true" /> Rouvrir
-                    </button>
-                  )}
-                  {cmd.statut !== 'Annulée' &&
+                  {admin.role === 'direction' &&
+                    ['Livrée', 'Livrée partiellement'].includes(cmd.statut) &&
+                    peutToucherLivree(cmd) && (
+                      <button className="btn btn-ghost" onClick={() => rouvrirCommande(cmd)}>
+                        <RotateCcw size={16} aria-hidden="true" /> Rouvrir
+                      </button>
+                    )}
+                  {admin.role === 'direction' &&
+                    cmd.statut !== 'Annulée' &&
                     (!['Livrée', 'Livrée partiellement'].includes(cmd.statut) || peutToucherLivree(cmd)) && (
                       <>
                         <button className="btn btn-secondary" onClick={() => setModifierCible(cmd)}>
@@ -1093,7 +1165,7 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
                       <div className="commande-actions" style={{ marginTop: 10 }}>
                         <button
                           className="btn btn-secondary"
-                          onClick={() => majCommande(cmd.clientId, cmd.numero, { statut: 'En livraison', enLivraisonLe: Date.now() })}
+                          onClick={() => demarrerTournee(cmd)}
                         >
                           <Truck size={16} aria-hidden="true" /> Démarrer la tournée
                         </button>
@@ -1145,22 +1217,30 @@ function AdminCommandes({ admin, clients, produits, setProduits }) {
 // enregistre, pour chaque commande livrée, ce qui revient (bon état ou
 // perdu). Contrairement à Modifier/Annuler, cette action reste ouverte à la
 // Préparation puisqu'elle fait partie de son travail de fin de tournée.
-function AdminRetours({ clients, produits, setProduits }) {
-  const [toutes, setToutes] = useState([])
+function AdminRetours({ commandesGlobales, onRefresh }) {
   const [retourCible, setRetourCible] = useState(null)
 
-  useEffect(() => setToutes(chargerToutes(clients)), [clients])
-
-  const majCommande = (clientId, numero, patch) => sauverPatchCommande(clients, setToutes, clientId, numero, patch)
-
-  const enregistrerRetour = (cmd, lignesRetour, motif) => {
-    appliquerRetour(setProduits, majCommande, cmd, lignesRetour, motif)
-    setRetourCible(null)
+  const enregistrerRetour = async (cmd, lignesRetour, motif) => {
+    try {
+      await OrdersApi.retour(
+        cmd.id,
+        motif,
+        lignesRetour.map((l) => ({
+          productId: l.id,
+          qty: l.qty,
+          remisEnStock: !!l.remisEnStock,
+        })),
+      )
+      await onRefresh?.()
+      setRetourCible(null)
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   // Les plus récemment livrées en tête : c'est le flux naturel en fin de
   // tournée, juste après avoir passé ConfirmerLivraison.
-  const livrees = toutes
+  const livrees = (commandesGlobales ?? [])
     .filter((c) => ['Livrée', 'Livrée partiellement'].includes(c.statut))
     .sort((a, b) => (b.livreeLe ?? 0) - (a.livreeLe ?? 0))
 
@@ -1214,9 +1294,35 @@ function AdminRetours({ clients, produits, setProduits }) {
 }
 
 /* ---------- Coquille admin ---------- */
-export default function Admin({ admin, produits, setProduits, clients, setClients, onLogout }) {
+export default function Admin({
+  admin,
+  produits,
+  setProduits,
+  clients,
+  setClients,
+  commandesGlobales,
+  demandes,
+  onRefresh,
+  onLogout,
+}) {
   const tabs = TOUS_TABS.filter((t) => t.roles.includes(admin.role))
-  const [tab, setTab] = useState(tabs[0].id)
+  const [tab, setTab] = useState(tabs[0]?.id ?? 'commandes')
+
+  if (tabs.length === 0) {
+    return (
+      <div className="app">
+        <header className="header header-admin">
+          <span className="logo">origo<span className="logo-dot" aria-hidden="true" /></span>
+          <button className="icon-btn" onClick={onLogout} aria-label="Se déconnecter">
+            <LogOut size={20} />
+          </button>
+        </header>
+        <main className="main">
+          <p className="page-subtitle">Aucun onglet pour ce rôle.</p>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -1233,18 +1339,45 @@ export default function Admin({ admin, produits, setProduits, clients, setClient
       </header>
 
       <main className="main">
-        {tab === 'dashboard' && <Dashboard produits={produits} clients={clients} setClients={setClients} />}
+        {tab === 'dashboard' && (
+          <Dashboard
+            produits={produits}
+            clients={clients}
+            setClients={setClients}
+            commandesGlobales={commandesGlobales}
+            demandes={demandes}
+            onRefresh={onRefresh}
+          />
+        )}
         {tab === 'produits' && (
-          <AdminProduits produits={produits} setProduits={setProduits} clients={clients} setClients={setClients} />
+          <AdminProduits
+            produits={produits}
+            setProduits={setProduits}
+            clients={clients}
+            setClients={setClients}
+            onRefresh={onRefresh}
+          />
         )}
         {tab === 'clients' && (
-          <AdminClients produits={produits} clients={clients} setClients={setClients} />
+          <AdminClients
+            produits={produits}
+            clients={clients}
+            setClients={setClients}
+            onRefresh={onRefresh}
+          />
         )}
         {tab === 'commandes' && (
-          <AdminCommandes admin={admin} clients={clients} produits={produits} setProduits={setProduits} />
+          <AdminCommandes
+            admin={admin}
+            clients={clients}
+            produits={produits}
+            setProduits={setProduits}
+            commandesGlobales={commandesGlobales}
+            onRefresh={onRefresh}
+          />
         )}
         {tab === 'retours' && (
-          <AdminRetours clients={clients} produits={produits} setProduits={setProduits} />
+          <AdminRetours commandesGlobales={commandesGlobales} onRefresh={onRefresh} />
         )}
       </main>
 

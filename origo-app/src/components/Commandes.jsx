@@ -4,7 +4,8 @@ import {
   Pencil, Ban, Clock, Camera,
 } from 'lucide-react'
 import { euros, DELAI_MODIFICATION_MS } from '../data.js'
-import { TVA, telechargerPDF, envoyerParEmail } from '../pdf.js'
+import { telechargerPDF, envoyerParEmail } from '../pdf.js'
+import { useCompany } from '../company.jsx'
 import ModifierCommande from './ModifierCommande.jsx'
 
 const CLASSE_STATUT = {
@@ -30,11 +31,13 @@ const formatRestant = (ms) => {
 }
 
 function DocumentModal({ type, commande, onClose }) {
+  const company = useCompany()
+  const tvaRate = company.tvaRate ?? 0.21
   const estFacture = type === 'facture'
   // La facture ne porte que sur les articles réellement livrés
   const lignesDoc = estFacture ? commande.lignes.filter((l) => l.livree !== false) : commande.lignes
   const ht = lignesDoc.reduce((s, l) => s + l.qty * l.prixCarton, 0)
-  const tva = ht * TVA
+  const tva = ht * tvaRate
   return (
     <>
       <div className="overlay" onClick={onClose} aria-hidden="true" />
@@ -50,8 +53,8 @@ function DocumentModal({ type, commande, onClose }) {
         <div className="sheet-body doc">
           <div className="doc-entete">
             <div>
-              <p className="doc-logo">ORIGO</p>
-              <p style={{ color: 'var(--gray-600)' }}>12 rue du Four, 75011 Paris</p>
+              <p className="doc-logo">{company.name || 'ORIGO'}</p>
+              <p style={{ color: 'var(--gray-600)' }}>{company.address}</p>
             </div>
             <div style={{ textAlign: 'right', color: 'var(--gray-600)' }}>
               <p><strong style={{ color: 'var(--gray-900)' }}>{commande.numero}</strong></p>
@@ -86,7 +89,7 @@ function DocumentModal({ type, commande, onClose }) {
           {estFacture ? (
             <>
               <div className="total-row"><span>Total HT</span><span>{euros(ht)}</span></div>
-              <div className="total-row"><span>TVA 20 %</span><span>{euros(tva)}</span></div>
+              <div className="total-row"><span>TVA {Math.round(tvaRate * 100)} %</span><span>{euros(tva)}</span></div>
               <div className="doc-total"><span>Total TTC</span><span>{euros(ht + tva)}</span></div>
             </>
           ) : (

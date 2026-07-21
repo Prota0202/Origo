@@ -1,31 +1,33 @@
 {
-  "name": "server",
+  "name": "origo-api",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/src/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts"
+  },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
-    "express": "^5.2.1",
-    "pg": "^8.22.0"
+    "@fastify/cors": "^11.0.1",
+    "@fastify/jwt": "^9.1.0",
+    "@prisma/client": "^6.16.2",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^17.2.2",
+    "fastify": "^5.5.0",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^26.1.0",
-    "@types/pg": "^8.20.0",
-    "prisma": "^7.8.0",
-    "tsx": "^4.23.0",
-    "typescript": "^6.0.3"
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^24.3.1",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
   }
 }

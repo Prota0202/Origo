@@ -1,151 +1,259 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// ORIGO — schéma métier B2B (Belgique) — PostgreSQL
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleStaff {
+  DIRECTION
+  PREPARATION
+  LIVREUR
 }
 
 enum StatutCommande {
-  EN_ATTENTE // client a validé, rien n'est encore sorti de l'entrepôt
-  EN_COURS_DE_PREPARATION // le préparateur a commencé à cocher la checklist
-  EXPEDIEE // checklist 100% cochée, stock_physique décrémenté
+  CONFIRMEE
+  PREPAREE
+  EN_LIVRAISON
+  LIVREE
+  LIVREE_PARTIELLEMENT
   ANNULEE
 }
 
-enum TypeMouvement {
-  ENTREE_FOURNISSEUR
+enum TypeMouvementStock {
+  ENTREE
   SORTIE_COMMANDE
-  RETOUR_ANNULATION
-  AJUSTEMENT_INVENTAIRE // casse, perte, correction d'inventaire manuelle
+  RETOUR
+  AJUSTEMENT
 }
 
-enum RoleUtilisateur {
-  ADMIN
-  PREPARATEUR
+/// Compte interne ORIGO (direction, préparation, livreur)
+model Staff {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  motDePasseHash String
+  nom            String
+  role           RoleStaff
+  actif          Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  commandesPreparees OrderItem[] @relation("PreparePar")
+  livraisons         Order[]     @relation("LivrePar")
 }
 
+/// Restaurant / client B2B
 model Client {
-  id             Int            @id @default(autoincrement())
+  id             String   @id @default(cuid())
+  code           String   @unique
+  motDePasseHash String
   nom            String
   ville          String?
-  codeClient     String         @unique
-  motDePasseHash String
   email          String?
-  minCartons     Int            @default(5)
-  actif          Boolean        @default(true)
-  catalogue      CatalogEntry[]
-  orders         Order[]
-  createdAt      DateTime       @default(now())
+  telephone      String?
+  adresse        String?
+  numeroTva      String?
+  minCartons     Int      @default(5)
+  actif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  catalogue CatalogEntry[]
+  favoris   ClientFavori[]
+  notes     ClientNote[]
+  paliers   PrixPalier[]
+  commandes Order[]
+  demandes  DemandeProduit[]
 }
 
 model Product {
-  id               Int             @id @default(autoincrement())
-  nom              String
-  description      String?
-  categorie        String
-  unitesParCarton  Int
-  prixCartonDefaut Decimal         @db.Decimal(10, 2)
-  stockPhysique    Int             @default(0)
-  seuilAlerte      Int             @default(10)
-  photoUrl         String?
-  actif            Boolean         @default(true)
-  catalogue        CatalogEntry[]
-  orderItems       OrderItem[]
-  stockMovements   StockMovement[]
-  notifications    Notification[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id              String   @id @default(cuid())
+  sku             String   @unique
+  nom             String
+  description     String   @default("")
+  categorie       String
+  unitesParCarton Int
+  prixCarton      Decimal  @db.Decimal(10, 2)
+  stock           Int      @default(0)
+  seuilAlerte     Int      @default(10)
+  photoUrl        String?
+  /// Remise catalogue : seuil cartons + % (null = pas de remise)
+  remiseSeuil     Int?
+  remisePourcent  Decimal? @db.Decimal(5, 2)
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  catalogue       CatalogEntry[]
+  favoris         ClientFavori[]
+  notes           ClientNote[]
+  paliers         PrixPalier[]
+  orderItems      OrderItem[]
+  stockMouvements StockMouvement[]
+  demandes        DemandeProduit[]
 
   @@index([categorie])
+  @@index([actif])
 }
 
-// Catalogue personnalisé : quels produits + quel prix négocié pour chaque client
+/// Produits visibles + prix négocié par client
 model CatalogEntry {
-  id          Int      @id @default(autoincrement())
-  client      Client   @relation(fields: [clientId], references: [id])
-  clientId    Int
-  product     Product  @relation(fields: [productId], references: [id])
-  productId   Int
-  prixNegocie Decimal? @db.Decimal(10, 2) // NULL = tarif catalogue par défaut
+  id          String   @id @default(cuid())
+  clientId    String
+  productId   String
+  prixNegocie Decimal? @db.Decimal(10, 2)
   visible     Boolean  @default(true)
 
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
   @@unique([clientId, productId])
-}
-
-model Order {
-  id                  Int             @id @default(autoincrement())
-  numero              String          @unique
-  client              Client          @relation(fields: [clientId], references: [id])
-  clientId            Int
-  statut              StatutCommande  @default(EN_ATTENTE)
-  cartonsTotal        Int
-  totalHT             Decimal         @db.Decimal(10, 2)
-  payee               Boolean         @default(false)
-  dateLivraisonPrevue DateTime?
-  items               OrderItem[]
-  stockMovements      StockMovement[]
-  createdAt           DateTime        @default(now())
-  expedieeLe          DateTime?
-  annuleeLe           DateTime?
-  motifAnnulation     String?
-
-  @@index([statut])
   @@index([clientId])
 }
 
+model ClientFavori {
+  clientId  String
+  productId String
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, productId])
+}
+
+model ClientNote {
+  clientId  String
+  productId String
+  texte     String
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, productId])
+}
+
+/// Paliers de prix dégressifs par client / produit
+model PrixPalier {
+  id        String  @id @default(cuid())
+  clientId  String
+  productId String
+  seuil     Int
+  prix      Decimal @db.Decimal(10, 2)
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, productId, seuil])
+  @@index([clientId, productId])
+}
+
+model Order {
+  id                  String         @id @default(cuid())
+  numero              String         @unique
+  clientId            String
+  statut              StatutCommande @default(CONFIRMEE)
+  cartonsTotal        Int
+  totalHT             Decimal        @db.Decimal(12, 2)
+  payee               Boolean        @default(false)
+  dateLivraisonPrevue DateTime?
+  photoLivraisonUrl   String?
+  noteLivraison       String?
+  livreParId          String?
+  motifAnnulation     String?
+  annuleeLe           DateTime?
+  modifieeLe          DateTime?
+  livreeLe            DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  client          Client           @relation(fields: [clientId], references: [id])
+  livrePar        Staff?           @relation("LivrePar", fields: [livreParId], references: [id])
+  items           OrderItem[]
+  stockMouvements StockMouvement[]
+  retours         RetourCommande[]
+
+  @@index([clientId])
+  @@index([statut])
+  @@index([createdAt])
+}
+
 model OrderItem {
-  id                   Int       @id @default(autoincrement())
-  order                Order     @relation(fields: [orderId], references: [id])
-  orderId              Int
-  product              Product   @relation(fields: [productId], references: [id])
-  productId            Int
-  quantiteCartons      Int
-  prixUnitaireApplique Decimal   @db.Decimal(10, 2) // snapshot au moment de la commande
-  coche                Boolean   @default(false)
-  cocheLe              DateTime?
-  cochePar             Int?
+  id              String    @id @default(cuid())
+  orderId         String
+  productId       String
+  nomSnapshot     String
+  quantiteCartons Int
+  prixUnitaire    Decimal   @db.Decimal(10, 2)
+  /// null = pas encore traité à la livraison ; true/false = livré ou non
+  livree          Boolean?
+  coche           Boolean   @default(false)
+  cocheLe         DateTime?
+  prepareParId    String?
+
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id])
+  preparePar Staff?  @relation("PreparePar", fields: [prepareParId], references: [id])
 
   @@index([orderId])
   @@index([productId])
 }
 
-// Journal d'audit append-only : toute variation du stock physique laisse une trace
-model StockMovement {
-  id         Int           @id @default(autoincrement())
-  product    Product       @relation(fields: [productId], references: [id])
-  productId  Int
-  type       TypeMouvement
-  quantite   Int // positif (entrée) ou négatif (sortie)
-  order      Order?        @relation(fields: [orderId], references: [id])
-  orderId    Int?
-  stockApres Int // snapshot du stock_physique juste après ce mouvement
-  createdAt  DateTime      @default(now())
-  createdPar Int?
+model StockMouvement {
+  id         String             @id @default(cuid())
+  productId  String
+  type       TypeMouvementStock
+  quantite   Int
+  stockApres Int
+  orderId    String?
+  note       String?
+  createdAt  DateTime           @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id])
 
   @@index([productId])
+  @@index([createdAt])
 }
 
-model Notification {
-  id        Int      @id @default(autoincrement())
-  product   Product  @relation(fields: [productId], references: [id])
-  productId Int
-  type      String // 'STOCK_BAS' | 'RUPTURE'
-  message   String
-  lue       Boolean  @default(false)
+model DemandeProduit {
+  id        String   @id @default(cuid())
+  clientId  String
+  productId String
+  traite    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  @@index([productId, lue])
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([traite])
 }
 
-model Utilisateur {
-  id   Int             @id @default(autoincrement())
-  nom  String
-  role RoleUtilisateur
+model RetourCommande {
+  id        String   @id @default(cuid())
+  orderId   String
+  motif     String
+  createdAt DateTime @default(now())
+
+  order  Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lignes RetourLigne[]
+}
+
+model RetourLigne {
+  id           String  @id @default(cuid())
+  retourId     String
+  productId    String
+  quantite     Int
+  remisEnStock Boolean @default(true)
+
+  retour RetourCommande @relation(fields: [retourId], references: [id], onDelete: Cascade)
+}
+
+/// Compteur atomique pour numéros de commande CMD-0001…
+model Sequence {
+  nom    String @id
+  valeur Int    @default(0)
 }
