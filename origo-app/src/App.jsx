@@ -38,15 +38,15 @@ export default function App() {
   const [tab, setTab] = useState('catalogue')
   const [panier, setPanier] = useState({})
   const [panierOuvert, setPanierOuvert] = useState(false)
-  const panierOuvertRef = useRef(false)
+  const clientsRef = useRef([])
   const [qrOuvert, setQrOuvert] = useState(false)
   const [toast, setToast] = useState(null)
   const [notifCommandes, setNotifCommandes] = useState(false)
   const [erreurBoot, setErreurBoot] = useState(null)
 
   useEffect(() => {
-    panierOuvertRef.current = panierOuvert
-  }, [panierOuvert])
+    clientsRef.current = clients
+  }, [clients])
 
   const isStaff = user?.type === 'staff'
   const client = user?.type === 'client' ? user : null
@@ -54,6 +54,17 @@ export default function App() {
 
   const showToast = (msg) => setToast(msg)
 
+  const enrichirCommandes = useCallback((orders, clientsList) => {
+    const list = clientsList ?? clientsRef.current
+    const byId = Object.fromEntries((list ?? []).map((x) => [x.id, x]))
+    return orders.map((cmd) => ({
+      ...cmd,
+      clientNom: cmd.client ?? byId[cmd.clientId]?.nom ?? cmd.client,
+      clientVille: byId[cmd.clientId]?.ville,
+    }))
+  }, [])
+
+  /** Chargement complet (login / actions admin) */
   const chargerDonneesStaff = useCallback(async () => {
     const [p, o] = await Promise.all([ProductsApi.list(), OrdersApi.all()])
     setProduits(p)
@@ -67,21 +78,27 @@ export default function App() {
       setClients([])
     }
 
-    const byId = Object.fromEntries(c.map((x) => [x.id, x]))
-    setCommandesAdmin(
-      o.map((cmd) => ({
-        ...cmd,
-        clientNom: cmd.client ?? byId[cmd.clientId]?.nom ?? cmd.client,
-        clientVille: byId[cmd.clientId]?.ville,
-      })),
-    )
+    setCommandesAdmin(enrichirCommandes(o, c))
 
     try {
       setDemandes(await ClientsApi.listDemandes())
     } catch {
       setDemandes([])
     }
-  }, [])
+  }, [enrichirCommandes])
+
+  /** Polling : commandes (+ demandes direction) uniquement — pas de photos produits */
+  const rafraichirCommandesStaff = useCallback(async () => {
+    const o = await OrdersApi.all()
+    setCommandesAdmin(enrichirCommandes(o))
+    if (user?.role === 'direction') {
+      try {
+        setDemandes(await ClientsApi.listDemandes())
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [enrichirCommandes, user?.role])
 
   const chargerDonneesClient = useCallback(async (clientUser) => {
     const [p, o, d] = await Promise.all([
@@ -160,7 +177,7 @@ export default function App() {
     }
   }, [chargerDonneesClient, chargerDonneesStaff])
 
-  // Polling léger des commandes (sync multi-appareils)
+  // Polling commandes seulement (évite de recharger catalogues/photos toutes les 15 s)
   useEffect(() => {
     if (!user) return
     const tick = async () => {
@@ -192,12 +209,8 @@ export default function App() {
             )
             return o
           })
-          if (!panierOuvertRef.current) {
-            const p = await ProductsApi.list()
-            setProduits(p)
-          }
         } else {
-          await chargerDonneesStaff()
+          await rafraichirCommandesStaff()
         }
       } catch {
         /* réseau temporaire */
@@ -205,7 +218,7 @@ export default function App() {
     }
     const id = setInterval(tick, 15000)
     return () => clearInterval(id)
-  }, [user, chargerDonneesStaff])
+  }, [user, rafraichirCommandesStaff])
 
   useEffect(() => {
     if (!toast) return

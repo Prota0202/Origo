@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
-echo "Prisma db push..."
-npx prisma db push --skip-generate
+echo "Prisma migrate deploy..."
+npx prisma migrate deploy
 if [ "$SEED_ON_START" = "1" ]; then
   echo "Seed..."
   npx tsx prisma/seed.ts || true

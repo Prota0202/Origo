@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ClipboardList, ClipboardCheck, Euro, Ban, PackageCheck, Truck, RotateCcw, Clock, Camera, Pencil,
+  ClipboardList, ClipboardCheck, Euro, Ban, PackageCheck, Truck, RotateCcw, Clock, Camera, Pencil, Undo2,
 } from 'lucide-react'
 import { euros } from '../../data.js'
 import { getDelaiModificationMs } from '../../company.jsx'
@@ -200,13 +200,25 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                     Non livré : {cmd.lignes.filter((l) => l.qtyCommandee != null).map((l) => `${l.qtyCommandee - l.qty} × ${l.nom}`).join(' · ')}
                   </p>
                 )}
-                {cmd.photoLivraison && (
+                {(cmd.photoLivraison || cmd.hasPhotoLivraison) && (
                   <button
                     type="button"
                     className="lien-photo-livraison"
-                    onClick={() => window.open(cmd.photoLivraison, '_blank')}
+                    onClick={async () => {
+                      let url = cmd.photoLivraison
+                      if (!url && cmd.id) {
+                        try {
+                          const full = await OrdersApi.get(cmd.id)
+                          url = full.photoLivraison
+                        } catch (e) {
+                          alert(e.message)
+                          return
+                        }
+                      }
+                      if (url) window.open(url, '_blank')
+                    }}
                   >
-                    <img src={cmd.photoLivraison} alt="" />
+                    {cmd.photoLivraison ? <img src={cmd.photoLivraison} alt="" /> : null}
                     <span><Camera size={13} aria-hidden="true" /> Voir la photo de livraison</span>
                   </button>
                 )}

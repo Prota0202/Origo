@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { NotFoundError, ValidationError } from '../../lib/errors.js'
 import { prisma } from '../../lib/prisma.js'
+import { mapOrder } from '../../lib/mappers.js'
 import { requireClient, requireStaff } from '../../plugins/auth.js'
 import * as orders from './service.js'
 
@@ -17,6 +18,27 @@ const lignesSchema = z.object({
 export async function orderRoutes(app: FastifyInstance) {
   app.get('/api/v1/orders', { preHandler: requireStaff('DIRECTION', 'PREPARATION', 'LIVREUR') }, async () => {
     return orders.listerToutesCommandes()
+  })
+
+  /** Détail (ex. ancienne photo base64 encore en base) */
+  app.get('/api/v1/orders/:id', { preHandler: requireStaff('DIRECTION', 'PREPARATION', 'LIVREUR') }, async (req) => {
+    const { id } = req.params as { id: string }
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        client: { select: { nom: true } },
+        retours: { include: { lignes: true } },
+      },
+    })
+    if (!order) throw new NotFoundError('Commande introuvable')
+    const mapped = mapOrder(order)
+    return {
+      ...mapped,
+      photoLivraison: order.photoLivraisonUrl,
+      photoLivraisonUrl: order.photoLivraisonUrl,
+      hasPhotoLivraison: !!order.photoLivraisonUrl,
+    }
   })
 
   app.get('/api/v1/me/orders', { preHandler: requireClient }, async (req) => {

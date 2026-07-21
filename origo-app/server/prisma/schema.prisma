@@ -179,6 +179,7 @@ model Order {
   @@index([clientId])
   @@index([statut])
   @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model OrderItem {

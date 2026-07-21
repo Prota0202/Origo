@@ -1,5 +1,5 @@
-// Charge un fichier image et le redimensionne côté navigateur avant stockage
-// (les photos sont gardées en base64 dans le localStorage avec le catalogue)
+// Charge un fichier image et le redimensionne côté navigateur avant envoi API.
+// Le serveur enregistre ensuite un fichier `/uploads/…` (pas de base64 en base).
 
 function chargerDepuisFichier(file) {
   return new Promise((resolve, reject) => {

@@ -37,6 +37,7 @@ export const ClientsApi = {
 }
 
 export const OrdersApi = {
+  get: (id) => api(`/api/v1/orders/${id}`),
   mine: () => api('/api/v1/me/orders'),
   all: () => api('/api/v1/orders'),
   create: (lignes) => api('/api/v1/me/orders', { method: 'POST', body: { lignes } }),

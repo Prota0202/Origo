@@ -9,6 +9,7 @@ import type {
   StatutCommande,
 } from '@prisma/client'
 import { toNum } from './money.js'
+import { photoForList } from './uploads.js'
 
 /** Statuts API → libellés UI front existants */
 export const STATUT_UI: Record<StatutCommande, string> = {
@@ -36,6 +37,7 @@ export const ROLE_UI: Record<RoleStaff, string> = {
 }
 
 export function mapProduct(p: Product) {
+  const { url, hasPhoto } = photoForList(p.photoUrl)
   return {
     id: p.id,
     sku: p.sku,
@@ -46,7 +48,8 @@ export function mapProduct(p: Product) {
     prixCarton: toNum(p.prixCarton),
     stock: p.stock,
     seuilAlerte: p.seuilAlerte,
-    photo: p.photoUrl,
+    photo: url,
+    hasPhoto,
     actif: p.actif,
     remise:
       p.remiseSeuil != null && p.remisePourcent != null
@@ -104,6 +107,7 @@ export function mapOrder(
     retours?: (RetourCommande & { lignes?: RetourLigne[] })[]
   },
 ) {
+  const photoLiv = photoForList(o.photoLivraisonUrl)
   return {
     id: o.id,
     numero: o.numero,
@@ -135,8 +139,9 @@ export function mapOrder(
     total: toNum(o.totalHT),
     statut: STATUT_UI[o.statut],
     payee: o.payee,
-    photoLivraisonUrl: o.photoLivraisonUrl,
-    photoLivraison: o.photoLivraisonUrl,
+    photoLivraisonUrl: photoLiv.url,
+    photoLivraison: photoLiv.url,
+    hasPhotoLivraison: photoLiv.hasPhoto,
     noteLivraison: o.noteLivraison,
     motifAnnulation: o.motifAnnulation,
     annuleeLe: o.annuleeLe?.getTime() ?? null,

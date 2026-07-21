@@ -4,6 +4,7 @@ import { env } from '../../config/env.js'
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { tarifLigne, round2 } from '../../lib/pricing.js'
 import { mapOrder } from '../../lib/mappers.js'
+import { persistImageField } from '../../lib/uploads.js'
 import { toNum } from '../../lib/money.js'
 
 const orderInclude = {
@@ -307,6 +308,11 @@ export async function changerStatut(
     lignesLivrees?: { itemId: string; qtyLivree: number }[]
   },
 ) {
+  const photoLivraisonUrl =
+    opts?.photoLivraisonUrl !== undefined
+      ? await persistImageField(opts.photoLivraisonUrl, `livraison-${orderId}`)
+      : undefined
+
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -374,7 +380,7 @@ export async function changerStatut(
       data: {
         statut,
         ...(opts?.livreParId && { livreParId: opts.livreParId }),
-        ...(opts?.photoLivraisonUrl !== undefined && { photoLivraisonUrl: opts.photoLivraisonUrl }),
+        ...(photoLivraisonUrl !== undefined && { photoLivraisonUrl }),
         ...(opts?.noteLivraison !== undefined && { noteLivraison: opts.noteLivraison }),
         ...((statut === 'LIVREE' || statut === 'LIVREE_PARTIELLEMENT') && { livreeLe: new Date() }),
       },

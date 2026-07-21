@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma.js'
 import { mapProduct } from '../../lib/mappers.js'
+import { persistImageField } from '../../lib/uploads.js'
 import { NotFoundError, ValidationError } from '../../lib/errors.js'
 import { authenticate, requireStaff } from '../../plugins/auth.js'
 
@@ -54,6 +55,7 @@ export async function productRoutes(app: FastifyInstance) {
 
     const data = parsed.data
     const sku = data.sku?.trim() || `${slugify(data.nom)}-${Date.now().toString(36)}`
+    const photoUrl = await persistImageField(data.photoUrl ?? null, 'produit')
 
     const p = await prisma.product.create({
       data: {
@@ -65,7 +67,7 @@ export async function productRoutes(app: FastifyInstance) {
         prixCarton: data.prixCarton,
         stock: data.stock ?? 0,
         seuilAlerte: data.seuilAlerte ?? 10,
-        photoUrl: data.photoUrl ?? null,
+        photoUrl: photoUrl ?? null,
         remiseSeuil: data.remiseSeuil ?? null,
         remisePourcent: data.remisePourcent ?? null,
       },
@@ -82,6 +84,8 @@ export async function productRoutes(app: FastifyInstance) {
     if (!exists) throw new NotFoundError('Produit introuvable')
 
     const d = parsed.data
+    const photoUrl =
+      d.photoUrl !== undefined ? await persistImageField(d.photoUrl, 'produit') : undefined
     const p = await prisma.product.update({
       where: { id },
       data: {
@@ -92,7 +96,7 @@ export async function productRoutes(app: FastifyInstance) {
         ...(d.prixCarton != null && { prixCarton: d.prixCarton }),
         ...(d.stock != null && { stock: d.stock }),
         ...(d.seuilAlerte != null && { seuilAlerte: d.seuilAlerte }),
-        ...(d.photoUrl !== undefined && { photoUrl: d.photoUrl }),
+        ...(photoUrl !== undefined && { photoUrl }),
         ...(d.remiseSeuil !== undefined && { remiseSeuil: d.remiseSeuil }),
         ...(d.remisePourcent !== undefined && { remisePourcent: d.remisePourcent }),
         ...(d.actif != null && { actif: d.actif }),

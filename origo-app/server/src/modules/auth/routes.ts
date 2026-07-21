@@ -14,7 +14,15 @@ const loginSchema = z.object({
 })
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post('/api/v1/auth/login', async (req) => {
+  app.post(
+    '/api/v1/auth/login',
+    {
+      config: {
+        // Anti brute-force : 20 essais / IP / 15 min (suffisant pour un resto, pas pour un bot)
+        rateLimit: { max: 20, timeWindow: '15 minutes' },
+      },
+    },
+    async (req) => {
     const parsed = loginSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError('Code et mot de passe requis')
 
@@ -33,7 +41,7 @@ export async function authRoutes(app: FastifyInstance) {
         code: staff.code,
         nom: staff.nom,
       }
-      const token = app.jwt.sign(payload, { expiresIn: '30d' })
+      const token = app.jwt.sign(payload, { expiresIn: env.jwtExpiresIn })
       return {
         token,
         user: {
@@ -68,7 +76,7 @@ export async function authRoutes(app: FastifyInstance) {
       code: client.code,
       nom: client.nom,
     }
-    const token = app.jwt.sign(payload, { expiresIn: '30d' })
+    const token = app.jwt.sign(payload, { expiresIn: env.jwtExpiresIn })
     return {
       token,
       user: {
@@ -76,7 +84,8 @@ export async function authRoutes(app: FastifyInstance) {
         ...mapClient(client),
       },
     }
-  })
+    },
+  )
 
   app.get('/api/v1/auth/me', { preHandler: authenticate }, async (req) => {
     const user = req.user

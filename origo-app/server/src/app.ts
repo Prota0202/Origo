@@ -3,6 +3,8 @@ import cors from '@fastify/cors'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import { registerAuth } from './plugins/auth.js'
+import { registerUploadsStatic } from './lib/uploads.js'
+import rateLimit from '@fastify/rate-limit'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
 import { clientRoutes } from './modules/clients/routes.js'
@@ -12,6 +14,8 @@ import { orderRoutes } from './modules/orders/routes.js'
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+    // Upload photo compressée (data URL) puis conversion fichier côté serveur
+    bodyLimit: 3 * 1024 * 1024,
     ajv: { customOptions: { coerceTypes: true } },
   })
 
@@ -20,7 +24,15 @@ export async function buildApp() {
     credentials: true,
   })
 
+  // Limite globale douce ; login a une limite plus stricte (voir auth routes)
+  await app.register(rateLimit, {
+    global: true,
+    max: env.isProd ? 300 : 1000,
+    timeWindow: '1 minute',
+  })
+
   await registerAuth(app)
+  await registerUploadsStatic(app)
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof AppError) {

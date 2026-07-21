@@ -15,7 +15,7 @@ const clientInclude = {
 
 const createClientSchema = z.object({
   code: z.string().min(2).max(32),
-  motDePasse: z.string().min(4),
+  motDePasse: z.string().min(8, 'Mot de passe : 8 caractères minimum'),
   nom: z.string().min(1),
   ville: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -87,7 +87,7 @@ export async function clientRoutes(app: FastifyInstance) {
       numeroTva: z.string().nullable().optional(),
       minCartons: z.number().int().positive().optional(),
       actif: z.boolean().optional(),
-      motDePasse: z.string().min(4).optional(),
+      motDePasse: z.string().min(8).optional(),
     })
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError('Données invalides', parsed.error.flatten())

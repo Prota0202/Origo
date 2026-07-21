@@ -1,0 +1,15 @@
+---
+description: Anticiper les problèmes futurs Origo — ne pas déclarer prêt sans dette/risques traités
+alwaysApply: true
+---
+
+# Origo — anticipation
+
+Ne dis jamais que l’app est « prête » ou « finie » sans avoir listé ce qui cassera au volume, en prod, ou avec un vrai client.
+
+Avant de clôturer une feature :
+1. Identifier 2–3 risques futurs (perf, sécu, data, UX staff/livreur).
+2. Corriger ou mitiger **maintenant** ce qui est peu cher ; sinon noter explicitement la dette et quand la traiter (avant Hetzner / 1er client).
+3. Préférer les designs scalables (fichiers vs base64, listes légères, migrations, secrets prod).
+
+Interdit : rassurer par défaut (« ça ira », « on verra plus tard ») sans garde-fou ou plan concret.

@@ -9,7 +9,7 @@ App B2B restaurants (Belgique) : catalogue personnalisé, commandes, préparatio
 | Front | React + Vite (PWA) |
 | API | Fastify + Prisma |
 | DB | PostgreSQL 16 |
-| Auth | JWT + bcrypt |
+| Auth | JWT + bcrypt + rate-limit |
 
 ## Architecture
 
@@ -21,7 +21,8 @@ origo-app/
     components/admin/  Écrans staff (direction / prépa / livreur)
   server/
     src/modules/       Routes API (auth, products, clients, me, orders)
-    prisma/            Schéma + seed
+    uploads/           Photos (gitignoré) — demain S3/R2
+    prisma/            Schéma + migrations + seed
   scripts/             dev.ps1 · partager.ps1 · setup-db.ps1
   docker-compose.yml   API + Postgres
 ```
@@ -29,9 +30,8 @@ origo-app/
 ## Démarrage (Windows)
 
 ```powershell
-# Postgres Windows déjà installé + server/.env configuré
 cd server
-npm run setup   # generate + push + seed (1ère fois)
+npm run setup   # generate + migrate deploy + seed (1ère fois)
 npm run dev     # API :3001
 
 # Autre terminal
@@ -44,7 +44,6 @@ Ou : `powershell -File scripts/dev.ps1`
 ## Partager à un pote (tunnel)
 
 ```powershell
-# Front + API déjà lancés
 powershell -File scripts/partager.ps1
 ```
 
@@ -56,7 +55,7 @@ docker compose up -d --build
 
 Si Postgres Windows occupe déjà le port 5432, arrête-le ou garde uniquement le Postgres Windows.
 
-## Comptes seed
+## Comptes seed (démo uniquement)
 
 | Code | Mot de passe | Rôle |
 |------|--------------|------|
@@ -66,6 +65,22 @@ Si Postgres Windows occupe déjà le port 5432, arrête-le ou garde uniquement l
 | `BOMBAY` | `1234` | Client |
 | `MARCO` | `1234` | Client |
 
-## Créer un client
+> Avant un vrai client : changer tous ces mots de passe. Les **nouveaux** clients créés via l’admin exigent **≥ 8** caractères.
 
-Admin Direction → Clients → Nouveau client
+## Déjà anticipé (pour ne pas mourir plus tard)
+
+- Polling = commandes seules
+- Photos → fichiers `/uploads` (pas base64 en DB)
+- Listes API sans gros payloads photo
+- JWT : secret obligatoire en prod, TTL court (`JWT_EXPIRES_IN`, défaut 12h en prod)
+- Rate-limit login (anti brute-force)
+- Migrations Prisma (`migrate deploy` en Docker)
+- CORS refus `*` en production
+
+## Avant Hetzner / 1er restaurant réel
+
+1. `NODE_ENV=production` + `JWT_SECRET` fort (≥ 32 car.) + `CORS_ORIGIN` = ton domaine
+2. Changer MDP seed / ne plus exposer le tunnel Cloudflare
+3. Photos → R2/S3 (même API URL)
+4. Simplifier l’écran création client (catalogue puis prix)
+5. Pagination commandes si le volume augmente
