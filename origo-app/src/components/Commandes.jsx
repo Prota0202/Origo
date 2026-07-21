@@ -3,9 +3,9 @@ import {
   FileText, Receipt, ClipboardList, X, Download, Mail, Truck, CreditCard,
   Pencil, Ban, Clock, Camera,
 } from 'lucide-react'
-import { euros, DELAI_MODIFICATION_MS } from '../data.js'
+import { euros } from '../data.js'
 import { telechargerPDF, envoyerParEmail } from '../pdf.js'
-import { useCompany } from '../company.jsx'
+import { useCompany, getDelaiModificationMs } from '../company.jsx'
 import ModifierCommande from './ModifierCommande.jsx'
 
 const CLASSE_STATUT = {
@@ -17,7 +17,8 @@ const CLASSE_STATUT = {
   Annulée: 'statut-annulee',
 }
 
-const peutModifierSeul = (c) => c.statut === 'Confirmée' && Date.now() - c.ts <= DELAI_MODIFICATION_MS
+const peutModifierSeul = (c) =>
+  c.statut === 'Confirmée' && Date.now() - c.ts <= getDelaiModificationMs()
 
 // Facture et bon de commande ne sont générés qu'une fois la livraison
 // confirmée (checklist livreur) — pas avant, pour ne jamais facturer ou
@@ -183,8 +184,9 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
         <>
           <GraphConsommation commandes={commandes} />
           {commandes.map((c) => {
-            const modifiable = peutModifierSeul(c) && maintenant - c.ts <= DELAI_MODIFICATION_MS
-            const restant = DELAI_MODIFICATION_MS - (maintenant - c.ts)
+            const delai = getDelaiModificationMs()
+            const modifiable = peutModifierSeul(c) && maintenant - c.ts <= delai
+            const restant = delai - (maintenant - c.ts)
             return (
               <article key={c.numero} className={`commande-card ${c.statut === 'Annulée' ? 'commande-annulee' : ''}`}>
                 <div className="commande-top">

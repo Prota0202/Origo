@@ -1,0 +1,118 @@
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { prisma } from '../../lib/prisma.js'
+import { mapClient } from '../../lib/mappers.js'
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
+import { requireClient, requireStaff } from '../../plugins/auth.js'
+
+const clientInclude = {
+  catalogue: true,
+  favoris: true,
+  notes: true,
+  paliers: true,
+} as const
+
+/** Self-service client (/me) + demandes produit (staff). */
+export async function meRoutes(app: FastifyInstance) {
+  app.put('/api/v1/me/favoris', { preHandler: requireClient }, async (req) => {
+    const clientId = req.user.sub
+    const parsed = z.object({ productIds: z.array(z.string()) }).safeParse(req.body)
+    if (!parsed.success) throw new ValidationError('productIds requis')
+
+    await prisma.$transaction(async (tx) => {
+      await tx.clientFavori.deleteMany({ where: { clientId } })
+      if (parsed.data.productIds.length > 0) {
+        await tx.clientFavori.createMany({
+          data: parsed.data.productIds.map((productId) => ({ clientId, productId })),
+        })
+      }
+    })
+
+    const c = await prisma.client.findUniqueOrThrow({ where: { id: clientId }, include: clientInclude })
+    return mapClient(c)
+  })
+
+  app.put('/api/v1/me/notes/:productId', { preHandler: requireClient }, async (req) => {
+    const clientId = req.user.sub
+    const { productId } = req.params as { productId: string }
+    const parsed = z.object({ texte: z.string() }).safeParse(req.body)
+    if (!parsed.success) throw new ValidationError('texte requis')
+
+    if (!parsed.data.texte.trim()) {
+      await prisma.clientNote.deleteMany({ where: { clientId, productId } })
+    } else {
+      await prisma.clientNote.upsert({
+        where: { clientId_productId: { clientId, productId } },
+        create: { clientId, productId, texte: parsed.data.texte },
+        update: { texte: parsed.data.texte },
+      })
+    }
+
+    const c = await prisma.client.findUniqueOrThrow({ where: { id: clientId }, include: clientInclude })
+    return mapClient(c)
+  })
+
+  app.post('/api/v1/me/demandes', { preHandler: requireClient }, async (req) => {
+    const clientId = req.user.sub
+    const parsed = z.object({ productId: z.string() }).safeParse(req.body)
+    if (!parsed.success) throw new ValidationError('productId requis')
+
+    const existing = await prisma.demandeProduit.findFirst({
+      where: { clientId, productId: parsed.data.productId, traite: false },
+    })
+    if (existing) throw new ConflictError('Demande déjà envoyée pour ce produit')
+
+    const d = await prisma.demandeProduit.create({
+      data: { clientId, productId: parsed.data.productId },
+      include: { product: true, client: true },
+    })
+    return {
+      id: d.id,
+      clientId: d.clientId,
+      clientNom: d.client.nom,
+      produitId: d.productId,
+      produitNom: d.product.nom,
+      date: d.createdAt.getTime(),
+    }
+  })
+
+  app.get('/api/v1/me/demandes', { preHandler: requireClient }, async (req) => {
+    const list = await prisma.demandeProduit.findMany({
+      where: { clientId: req.user.sub, traite: false },
+      include: { product: true, client: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    return list.map((d) => ({
+      id: d.id,
+      clientId: d.clientId,
+      clientNom: d.client.nom,
+      produitId: d.productId,
+      produitNom: d.product.nom,
+      date: d.createdAt.getTime(),
+    }))
+  })
+
+  app.get('/api/v1/demandes', { preHandler: requireStaff('DIRECTION') }, async () => {
+    const list = await prisma.demandeProduit.findMany({
+      where: { traite: false },
+      include: { product: true, client: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    return list.map((d) => ({
+      id: d.id,
+      clientId: d.clientId,
+      clientNom: d.client.nom,
+      produitId: d.productId,
+      produitNom: d.product.nom,
+      date: d.createdAt.getTime(),
+    }))
+  })
+
+  app.post('/api/v1/demandes/:id/traiter', { preHandler: requireStaff('DIRECTION') }, async (req) => {
+    const { id } = req.params as { id: string }
+    const existing = await prisma.demandeProduit.findUnique({ where: { id } })
+    if (!existing) throw new NotFoundError('Demande introuvable')
+    await prisma.demandeProduit.update({ where: { id }, data: { traite: true } })
+    return { ok: true }
+  })
+}

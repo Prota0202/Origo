@@ -8,44 +8,53 @@ App B2B restaurants (Belgique) : catalogue personnalisé, commandes, préparatio
 |--------|--------|
 | Front | React + Vite (PWA) |
 | API | Fastify + Prisma |
-| DB | **PostgreSQL 16** |
+| DB | PostgreSQL 16 |
 | Auth | JWT + bcrypt |
-| Conteneurs | Docker Compose (après redémarrage WSL) |
 
-## Prérequis installés sur cette machine
+## Architecture
 
-- Node.js
-- **PostgreSQL 16** (service Windows `postgresql-x64-16`)
-- **Docker Desktop** (installé — nécessite un **redémarrage PC** pour activer WSL2)
+```
+origo-app/
+  src/                 Front React
+    api/               Client HTTP
+    components/        Écrans client
+    components/admin/  Écrans staff (direction / prépa / livreur)
+  server/
+    src/modules/       Routes API (auth, products, clients, me, orders)
+    prisma/            Schéma + seed
+  scripts/             dev.ps1 · partager.ps1 · setup-db.ps1
+  docker-compose.yml   API + Postgres
+```
 
-## Démarrage rapide (Windows)
+## Démarrage (Windows)
 
 ```powershell
-# Terminal 1 — API
+# Postgres Windows déjà installé + server/.env configuré
 cd server
-npm run dev
+npm run setup   # generate + push + seed (1ère fois)
+npm run dev     # API :3001
 
-# Terminal 2 — Front
+# Autre terminal
 cd ..
-npm run dev
+npm run dev     # Front :5173
 ```
 
 Ou : `powershell -File scripts/dev.ps1`
 
-Front : http://localhost:5173 · API : http://localhost:3001
+## Partager à un pote (tunnel)
 
-## Docker (API + Postgres)
+```powershell
+# Front + API déjà lancés
+powershell -File scripts/partager.ps1
+```
 
-Nécessite Docker Desktop **démarré** (redémarrage PC si WSL2 vient d’être installé) :
+## Docker (optionnel)
 
 ```bash
 docker compose up -d --build
-# Seed optionnel :
-docker compose run -e SEED_ON_START=1 api
 ```
 
-> Si Postgres Windows occupe déjà le port 5432, arrête le service `postgresql-x64-16` avant, ou garde uniquement le Postgres Windows (déjà configuré).
-
+Si Postgres Windows occupe déjà le port 5432, arrête-le ou garde uniquement le Postgres Windows.
 
 ## Comptes seed
 
@@ -54,44 +63,9 @@ docker compose run -e SEED_ON_START=1 api
 | `ORIGO` | `admin2026` | Direction |
 | `PREPA` | `prepa2026` | Préparation |
 | `LIVREUR` | `livreur2026` | Livreur |
-| `DEMO` | `demo2026` | Client test |
-
-## Docker (après redémarrage PC)
-
-WSL2 a été installé — **redémarre Windows une fois**, puis :
-
-```bash
-# Vérifier Docker
-docker version
-
-# Lancer Postgres via Docker (alternative au Postgres Windows)
-cd origo-app
-docker compose up -d
-
-# Adapter server/.env si besoin (même URL localhost:5432)
-cd server
-npm run setup
-npm run dev
-```
-
-> Si le Postgres Windows occupe déjà le port 5432, soit tu l’utilises tel quel (déjà OK), soit tu arrêtes le service et tu passes par Docker.
+| `BOMBAY` | `1234` | Client |
+| `MARCO` | `1234` | Client |
 
 ## Créer un client
 
-Dans l’admin Direction → Clients → Nouveau client  
-(ou `POST /api/v1/clients` avec Bearer token `ORIGO`)
-
-## API principale
-
-```
-GET  /api/v1/health
-POST /api/v1/auth/login
-GET  /api/v1/auth/me
-GET  /api/v1/products
-GET  /api/v1/clients
-POST /api/v1/clients
-GET  /api/v1/me/orders
-POST /api/v1/me/orders
-PATCH /api/v1/orders/:id/statut
-POST /api/v1/orders/:id/retours
-```
+Admin Direction → Clients → Nouveau client

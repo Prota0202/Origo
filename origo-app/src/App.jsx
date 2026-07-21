@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, ReceiptText, Headset, ShoppingCart, QrCode, CheckCircle2, LogOut, PackageSearch } from 'lucide-react'
-import { tarifLigne, DELAI_MODIFICATION_MS } from './data.js'
+import { tarifLigne } from './data.js'
+import { getDelaiModificationMs } from './company.jsx'
 import { AuthApi, ProductsApi, ClientsApi, OrdersApi, setToken, clearSession, getToken } from './api/index.js'
 import Login from './components/Login.jsx'
 import Admin from './components/Admin.jsx'
@@ -322,7 +323,7 @@ export default function App() {
   }
 
   const peutModifierSeul = (c) =>
-    c.statut === 'Confirmée' && Date.now() - c.ts <= DELAI_MODIFICATION_MS
+    c.statut === 'Confirmée' && Date.now() - c.ts <= getDelaiModificationMs()
 
   const annulerCommande = async (commande) => {
     if (!peutModifierSeul(commande) || !commande.id) return

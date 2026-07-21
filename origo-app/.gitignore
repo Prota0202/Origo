@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+dev-dist/
+.claude/
+.DS_Store
+

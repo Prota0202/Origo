@@ -2,9 +2,6 @@ import { jsPDF } from 'jspdf'
 import { euros } from './data.js'
 import { getCompany, getTvaRate } from './company.jsx'
 
-/** @deprecated préférer getTvaRate() — conservé pour imports existants */
-export const TVA = 0.21
-
 const ORANGE = [232, 128, 79]
 const GRIS_FONCE = [31, 41, 55]
 const GRIS = [107, 114, 128]

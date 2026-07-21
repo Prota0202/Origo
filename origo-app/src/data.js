@@ -25,8 +25,5 @@ export function tarifLigne(client, produit, qty) {
   return { pu, remisePct, puFinal, total: puFinal * qty }
 }
 
-/** Fenêtre pendant laquelle un client peut modifier / annuler seul sa commande */
-export const DELAI_MODIFICATION_MS = 60 * 60 * 1000
-
 export const euros = (n) =>
   Number(n).toLocaleString('fr-BE', { style: 'currency', currency: 'EUR' })

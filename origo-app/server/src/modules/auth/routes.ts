@@ -111,6 +111,7 @@ export async function authRoutes(app: FastifyInstance) {
     phoneLink: `tel:${env.company.phone.replace(/\s/g, '')}`,
     vat: env.company.vat,
     tvaRate: env.company.tvaRate,
+    delaiModificationMs: env.delaiModificationMs,
     horaires: 'Lun – Ven · 8h00 – 18h00',
   }))
 }

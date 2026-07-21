@@ -6,6 +6,7 @@ import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
 import { clientRoutes } from './modules/clients/routes.js'
+import { meRoutes } from './modules/me/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 
 export async function buildApp() {
@@ -55,6 +56,7 @@ export async function buildApp() {
   await authRoutes(app)
   await productRoutes(app)
   await clientRoutes(app)
+  await meRoutes(app)
   await orderRoutes(app)
 
   return app

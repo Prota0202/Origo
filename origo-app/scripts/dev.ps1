@@ -11,4 +11,4 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root'; npm r
 Write-Host ""
 Write-Host "Front : http://localhost:5173"
 Write-Host "API   : http://localhost:3001"
-Write-Host "Comptes : DEMO/demo2026 · ORIGO/admin2026 · PREPA/prepa2026 · LIVREUR/livreur2026"
+Write-Host "Comptes : BOMBAY/1234 · MARCO/1234 · ORIGO/admin2026 · PREPA/prepa2026 · LIVREUR/livreur2026"

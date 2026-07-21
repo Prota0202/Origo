@@ -9,6 +9,7 @@ const defaults = {
   phoneLink: 'tel:+3220000000',
   vat: '',
   tvaRate: 0.21,
+  delaiModificationMs: 60 * 60 * 1000,
   horaires: 'Lun – Ven · 8h00 – 18h00',
 }
 
@@ -28,6 +29,7 @@ export function CompanyProvider({ children }) {
           phoneLink: c.phoneLink ?? `tel:${String(c.phone ?? '').replace(/\s/g, '')}`,
           vat: c.vat ?? '',
           tvaRate: Number(c.tvaRate ?? 0.21),
+          delaiModificationMs: Number(c.delaiModificationMs ?? defaults.delaiModificationMs),
           horaires: c.horaires ?? defaults.horaires,
         }),
       )
@@ -41,7 +43,7 @@ export function useCompany() {
   return useContext(CompanyContext)
 }
 
-/** Snapshot synchrone pour PDF (mis à jour via setCompanySnapshot) */
+/** Snapshot synchrone pour PDF / helpers hors React */
 let companySnapshot = { ...defaults }
 
 export function setCompanySnapshot(c) {
@@ -54,4 +56,8 @@ export function getCompany() {
 
 export function getTvaRate() {
   return companySnapshot.tvaRate ?? 0.21
+}
+
+export function getDelaiModificationMs() {
+  return companySnapshot.delaiModificationMs ?? defaults.delaiModificationMs
 }
