@@ -4,7 +4,7 @@
 # Variables (optionnel) dans un fichier .env à la racine origo-app/ :
 #   JWT_SECRET=...
 #   COMPANY_ADDRESS=...
-#   COMPANY_VAT=BE0...
+#   COMPANY_VAT=
 
 services:
   db:
@@ -42,13 +42,17 @@ services:
       HOST: "0.0.0.0"
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       COMPANY_NAME: ${COMPANY_NAME:-ORIGO}
-      COMPANY_ADDRESS: ${COMPANY_ADDRESS:-Belgique}
+      COMPANY_ADDRESS: ${COMPANY_ADDRESS:-Avenue des Anciens Combattants 23, 1140 Evere}
       COMPANY_EMAIL: ${COMPANY_EMAIL:-pro@origo.be}
-      COMPANY_PHONE: ${COMPANY_PHONE:-+32 2 000 00 00}
-      COMPANY_VAT: ${COMPANY_VAT:-BE0000000000}
+      COMPANY_PHONE: ${COMPANY_PHONE:-+32 468 08 96 03}
+      COMPANY_VAT: ${COMPANY_VAT:-}
       TVA_RATE: ${TVA_RATE:-0.21}
+    # Sans ce volume, les photos produits disparaissent à chaque rebuild de l'image
+    volumes:
+      - origo_uploads:/app/uploads
     ports:
       - "3001:3001"
 
 volumes:
   origo_pg:
+  origo_uploads:

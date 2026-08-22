@@ -1,0 +1,11 @@
+# Overlay : copie les dumps hors du VPS (Storage Box montée, autre disque, etc.).
+# Activé par deploy.sh si BACKUP_OFFSITE_HOST_DIR est défini dans .env.prod.
+#
+#   BACKUP_OFFSITE_HOST_DIR=/mnt/storagebox/origo
+
+services:
+  backup:
+    environment:
+      BACKUP_OFFSITE_DIR: /offsite
+    volumes:
+      - ${BACKUP_OFFSITE_HOST_DIR}:/offsite

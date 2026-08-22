@@ -1,8 +1,11 @@
 import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.jsx'
 import { CompanyProvider, useCompany, setCompanySnapshot } from './company.jsx'
+
+registerSW({ immediate: true })
 
 function Bootstrap() {
   const company = useCompany()

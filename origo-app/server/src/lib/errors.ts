@@ -23,8 +23,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'Accès refusé') {
-    super(403, message, 'FORBIDDEN')
+  constructor(message = 'Accès refusé', code = 'FORBIDDEN') {
+    super(403, message, code)
   }
 }
 

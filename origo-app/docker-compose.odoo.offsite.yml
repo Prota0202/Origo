@@ -1,0 +1,9 @@
+# Overlay offsite pour le dump Odoo + filestore.
+# Inclus par deploy.sh si WITH_ODOO=1 et BACKUP_OFFSITE_HOST_DIR est défini.
+
+services:
+  odoo-backup:
+    environment:
+      BACKUP_OFFSITE_DIR: /offsite
+    volumes:
+      - ${BACKUP_OFFSITE_HOST_DIR}:/offsite

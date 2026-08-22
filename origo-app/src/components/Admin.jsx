@@ -1,15 +1,18 @@
 import { useState } from 'react'
-import { LayoutDashboard, Package, Users, ReceiptText, LogOut, Undo2 } from 'lucide-react'
+import { LayoutDashboard, Package, Users, ReceiptText, LogOut, Undo2, UserCog } from 'lucide-react'
 import { Dashboard } from './admin/Dashboard.jsx'
 import { AdminProduits } from './admin/Produits.jsx'
 import { AdminClients } from './admin/Clients.jsx'
 import { AdminCommandes } from './admin/Commandes.jsx'
 import { AdminRetours } from './admin/Retours.jsx'
+import { AdminEquipe } from './admin/Equipe.jsx'
+import ChangerMotDePasse from './ChangerMotDePasse.jsx'
 
 const TOUS_TABS = [
   { id: 'dashboard', label: 'Tableau', icon: LayoutDashboard, roles: ['direction'] },
   { id: 'produits', label: 'Produits', icon: Package, roles: ['direction'] },
   { id: 'clients', label: 'Clients', icon: Users, roles: ['direction'] },
+  { id: 'equipe', label: 'Équipe', icon: UserCog, roles: ['direction'] },
   { id: 'commandes', label: 'Commandes', icon: ReceiptText, roles: ['direction', 'preparation', 'livreur'] },
   { id: 'retours', label: 'Retours', icon: Undo2, roles: ['direction', 'preparation', 'livreur'] },
 ]
@@ -86,6 +89,7 @@ export default function Admin({
             onRefresh={onRefresh}
           />
         )}
+        {tab === 'equipe' && <AdminEquipe />}
         {tab === 'commandes' && (
           <AdminCommandes
             admin={admin}
@@ -99,6 +103,7 @@ export default function Admin({
         {tab === 'retours' && (
           <AdminRetours commandesGlobales={commandesGlobales} onRefresh={onRefresh} />
         )}
+        {(admin.role !== 'direction' || tab === 'dashboard') && <ChangerMotDePasse />}
       </main>
 
       <nav className="tabbar" aria-label="Navigation administration">

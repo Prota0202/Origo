@@ -1,5 +1,6 @@
 import { Phone, Mail, Clock, MessageCircle } from 'lucide-react'
 import { useCompany } from '../company.jsx'
+import ChangerMotDePasse from './ChangerMotDePasse.jsx'
 
 export default function ServiceClient() {
   const company = useCompany()
@@ -32,6 +33,8 @@ export default function ServiceClient() {
           <span>{company.horaires}</span>
         </div>
       </div>
+
+      <ChangerMotDePasse />
     </section>
   )
 }

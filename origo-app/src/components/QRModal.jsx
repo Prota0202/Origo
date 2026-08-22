@@ -1,11 +1,16 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { X } from 'lucide-react'
 
-const LAN_URL = `http://${import.meta.env.VITE_LAN_IP || window.location.hostname}${
-  window.location.port ? `:${window.location.port}` : ''
-}`
+const urlApp = () => {
+  if (typeof window === 'undefined') return ''
+  if (window.location.protocol === 'https:') return window.location.origin
+  return `http://${import.meta.env.VITE_LAN_IP || window.location.hostname}${
+    window.location.port ? `:${window.location.port}` : ''
+  }`
+}
 
 export default function QRModal({ onClose }) {
+  const url = urlApp()
   return (
     <>
       <div className="overlay" onClick={onClose} aria-hidden="true" />
@@ -18,13 +23,12 @@ export default function QRModal({ onClose }) {
         </div>
         <div className="sheet-body qr-box">
           <p style={{ color: 'var(--gray-600)', fontSize: 14, maxWidth: 320 }}>
-            Scannez ce QR code avec l’appareil photo de votre iPhone, Samsung ou tablette
-            (même réseau Wi-Fi) pour lancer l’app.
+            Scannez ce QR code avec l’appareil photo pour ouvrir ORIGO sur ce téléphone.
           </p>
           <div className="qr-cadre">
-            <QRCodeSVG value={LAN_URL} size={220} fgColor="#1f2937" level="M" aria-label={`QR code vers ${LAN_URL}`} />
+            <QRCodeSVG value={url} size={220} fgColor="#1f2937" level="M" aria-label={`QR code vers ${url}`} />
           </div>
-          <span className="qr-url">{LAN_URL}</span>
+          <span className="qr-url">{url}</span>
         </div>
       </div>
     </>

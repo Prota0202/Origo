@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, ReceiptText, Headset, ShoppingCart, QrCode, CheckCircle2, LogOut, PackageSearch } from 'lucide-react'
-import { tarifLigne } from './data.js'
 import { getDelaiModificationMs } from './company.jsx'
 import { AuthApi, ProductsApi, ClientsApi, OrdersApi, setToken, clearSession, getToken } from './api/index.js'
 import Login from './components/Login.jsx'
@@ -11,6 +10,7 @@ import Panier from './components/Panier.jsx'
 import Commandes from './components/Commandes.jsx'
 import ServiceClient from './components/ServiceClient.jsx'
 import QRModal from './components/QRModal.jsx'
+import ChangerMotDePasse from './components/ChangerMotDePasse.jsx'
 
 const TABS = [
   { id: 'catalogue', label: 'Catalogue', icon: BookOpen },
@@ -43,6 +43,7 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const [notifCommandes, setNotifCommandes] = useState(false)
   const [erreurBoot, setErreurBoot] = useState(null)
+  const [horsLigne, setHorsLigne] = useState(false)
 
   useEffect(() => {
     clientsRef.current = clients
@@ -59,8 +60,12 @@ export default function App() {
     const byId = Object.fromEntries((list ?? []).map((x) => [x.id, x]))
     return orders.map((cmd) => ({
       ...cmd,
-      clientNom: cmd.client ?? byId[cmd.clientId]?.nom ?? cmd.client,
-      clientVille: byId[cmd.clientId]?.ville,
+      clientNom: cmd.clientNom || cmd.client || byId[cmd.clientId]?.nom || cmd.client,
+      clientVille: cmd.clientVille || byId[cmd.clientId]?.ville,
+      clientAdresse: cmd.clientAdresse || byId[cmd.clientId]?.adresse,
+      clientTelephone: cmd.clientTelephone || byId[cmd.clientId]?.telephone,
+      clientEmail: cmd.clientEmail || byId[cmd.clientId]?.email,
+      clientTva: cmd.clientTva || byId[cmd.clientId]?.numeroTva,
     }))
   }, [])
 
@@ -160,6 +165,7 @@ export default function App() {
         const me = await AuthApi.me()
         if (cancelled) return
         setUser(me)
+        if (me.mdpAChanger) return
         if (me.type === 'staff') await chargerDonneesStaff()
         else await chargerDonneesClient(me)
       } catch {
@@ -179,7 +185,7 @@ export default function App() {
 
   // Polling commandes seulement (évite de recharger catalogues/photos toutes les 15 s)
   useEffect(() => {
-    if (!user) return
+    if (!user || user.mdpAChanger) return
     const tick = async () => {
       try {
         if (user.type === 'client') {
@@ -212,8 +218,9 @@ export default function App() {
         } else {
           await rafraichirCommandesStaff()
         }
+        setHorsLigne(false)
       } catch {
-        /* réseau temporaire */
+        setHorsLigne(true)
       }
     }
     const id = setInterval(tick, 15000)
@@ -225,6 +232,41 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 4000)
     return () => clearTimeout(t)
   }, [toast])
+
+  useEffect(() => {
+    if (!client) return
+    const q = new URLSearchParams(window.location.search)
+    const id = q.get('commande')
+    const paye = q.get('paye')
+    if (!id || !paye) return
+    window.history.replaceState({}, '', window.location.pathname)
+    setTab('commandes')
+    if (paye === 'ok') {
+      OrdersApi.confirmerPaiement(id)
+        .then((r) => showToast(r.payee ? 'Paiement carte reçu.' : 'Commande enregistrée — paiement à confirmer.'))
+        .catch(() => showToast('Commande enregistrée — paiement à vérifier.'))
+    } else {
+      showToast('Paiement carte annulé. La commande reste due par prélèvement SEPA.')
+    }
+  }, [client])
+
+  useEffect(() => {
+    if (!client) return
+    const q = new URLSearchParams(window.location.search)
+    const sepa = q.get('sepa')
+    if (!sepa) return
+    window.history.replaceState({}, '', window.location.pathname)
+    if (sepa === 'ok') {
+      AuthApi.me()
+        .then((u) => {
+          setUser(u)
+          showToast('Mandat SEPA enregistré. Vous pouvez commander.')
+        })
+        .catch(() => showToast('Mandat envoyé — reconnectez-vous si le panier le redemande.'))
+    } else {
+      showToast('Mandat SEPA annulé. Sans IBAN, le prélèvement ne partira pas.')
+    }
+  }, [client])
 
   const majClient = async (patch) => {
     if (!client) return
@@ -265,6 +307,7 @@ export default function App() {
       setTab('catalogue')
       setPanier({})
       setNotifCommandes(false)
+      if (u.mdpAChanger) return null
       if (u.type === 'staff') await chargerDonneesStaff()
       else await chargerDonneesClient(u)
       return null
@@ -319,15 +362,20 @@ export default function App() {
     )
   }
 
-  const validerCommande = async () => {
+  const validerCommande = async (signature) => {
     try {
       const lignes = Object.entries(panier).map(([productId, qty]) => ({ productId, qty }))
-      const commande = await OrdersApi.create(lignes)
+      const commande = await OrdersApi.create(lignes, signature)
       setCommandes((prev) => [commande, ...prev])
       const p = await ProductsApi.list()
       setProduits(p)
       setPanier({})
       setPanierOuvert(false)
+      if (commande.paiementUrl) {
+        showToast('Redirection vers le paiement carte…')
+        window.location.assign(commande.paiementUrl)
+        return
+      }
       setTab('commandes')
       showToast(`Commande ${commande.numero} confirmée`)
     } catch (e) {
@@ -385,6 +433,33 @@ export default function App() {
     )
   }
 
+  if (user.mdpAChanger) {
+    return (
+      <div className="login-page">
+        <div className="login-hero">
+          <span className="logo">
+            origo<span className="logo-dot" aria-hidden="true" />
+          </span>
+          <p>Sécurité du compte</p>
+        </div>
+        <div className="login-card">
+          <ChangerMotDePasse
+            obligatoire
+            onChange={async ({ token, user: u }) => {
+              setToken(token)
+              setUser(u)
+              if (u.type === 'staff') await chargerDonneesStaff()
+              else await chargerDonneesClient(u)
+            }}
+          />
+          <button type="button" className="btn btn-secondary" style={{ marginTop: 12 }} onClick={seDeconnecter}>
+            Se déconnecter
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (admin) {
     return (
       <>
@@ -399,6 +474,11 @@ export default function App() {
           onRefresh={chargerDonneesStaff}
           onLogout={seDeconnecter}
         />
+        {horsLigne && (
+          <div className="bandeau-hors-ligne" role="status">
+            Connexion perdue — les commandes ne se mettent plus à jour.
+          </div>
+        )}
         {toast && (
           <div className="toast" role="status">
             <CheckCircle2 size={18} aria-hidden="true" />
@@ -466,6 +546,7 @@ export default function App() {
             produits={produits}
             onModifier={modifierCommande}
             onAnnuler={annulerCommande}
+            onAllerCatalogue={() => setTab('catalogue')}
           />
         )}
         {tab === 'service' && <ServiceClient />}
@@ -500,22 +581,23 @@ export default function App() {
           panier={panier}
           onChange={changerQuantite}
           onClose={() => setPanierOuvert(false)}
-          onValider={() => {
-            const lignes = Object.keys(panier)
-              .map((id) => produits.find((p) => p.id === id))
-              .filter(Boolean)
+          onValider={(signature) => {
             const cartons = Object.values(panier).reduce((s, q) => s + q, 0)
-            const total = lignes.reduce((s, p) => s + tarifLigne(client, p, panier[p.id]).total, 0)
             if (cartons < (client.minCartons ?? 5)) {
               showToast(`Minimum ${client.minCartons} cartons`)
               return
             }
-            void validerCommande(lignes, total, cartons)
+            void validerCommande(signature)
           }}
         />
       )}
       {qrOuvert && <QRModal onClose={() => setQrOuvert(false)} />}
 
+      {horsLigne && (
+        <div className="bandeau-hors-ligne" role="status">
+          Connexion perdue — les commandes ne se mettent plus à jour.
+        </div>
+      )}
       {toast && (
         <div className="toast" role="status">
           <CheckCircle2 size={18} aria-hidden="true" />

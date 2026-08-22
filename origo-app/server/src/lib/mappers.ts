@@ -91,6 +91,9 @@ export function mapClient(
     adresse: c.adresse,
     numeroTva: c.numeroTva,
     minCartons: c.minCartons,
+    modePaiement: c.modePaiement ?? 'sepa',
+    sepaMandatOk: Boolean(c.stripeSepaPaymentMethodId),
+    sepaIbanLast4: c.sepaIbanLast4 ?? '',
     actif: c.actif,
     produits,
     prix,
@@ -103,16 +106,30 @@ export function mapClient(
 export function mapOrder(
   o: Order & {
     items: OrderItem[]
-    client?: { nom: string }
+    client?: {
+      nom: string
+      ville?: string | null
+      adresse?: string | null
+      telephone?: string | null
+      email?: string | null
+      numeroTva?: string | null
+    }
     retours?: (RetourCommande & { lignes?: RetourLigne[] })[]
   },
 ) {
   const photoLiv = photoForList(o.photoLivraisonUrl)
+  const photoSig = photoForList(o.signatureImageUrl)
   return {
     id: o.id,
     numero: o.numero,
     clientId: o.clientId,
     client: o.client?.nom ?? undefined,
+    clientNom: o.client?.nom ?? undefined,
+    clientVille: o.client?.ville ?? null,
+    clientAdresse: o.client?.adresse ?? null,
+    clientTelephone: o.client?.telephone ?? null,
+    clientEmail: o.client?.email ?? null,
+    clientTva: o.client?.numeroTva ?? null,
     ts: o.createdAt.getTime(),
     date: o.createdAt.toLocaleDateString('fr-BE', {
       day: 'numeric',
@@ -126,17 +143,32 @@ export function mapOrder(
           month: 'long',
         })
       : null,
-    lignes: o.items.map((i) => ({
-      id: i.productId,
-      itemId: i.id,
-      nom: i.nomSnapshot,
-      prixCarton: toNum(i.prixUnitaire),
-      qty: i.quantiteCartons,
-      livree: i.livree,
-      coche: i.coche,
-    })),
+    lignes: o.items.map((i) => {
+      const commandee = i.quantiteCommandee ?? i.quantiteCartons
+      return {
+        id: i.productId,
+        itemId: i.id,
+        nom: i.nomSnapshot,
+        prixCarton: toNum(i.prixUnitaire),
+        qty: i.quantiteCartons,
+        // Renseignée seulement en cas d'écart, le front s'en sert pour
+        // afficher « non livré » (il l'attendait déjà sans jamais la recevoir).
+        qtyCommandee: commandee !== i.quantiteCartons ? commandee : null,
+        livree: i.livree,
+        coche: i.coche,
+      }
+    }),
     cartons: o.cartonsTotal,
     total: toNum(o.totalHT),
+    fraisLivraisonHT: toNum(o.fraisLivraisonHT),
+    sousTotalHT: Math.round((toNum(o.totalHT) - toNum(o.fraisLivraisonHT)) * 100) / 100,
+    signatureNom: o.signatureNom ?? null,
+    signatureImageUrl: photoSig.url,
+    signatureImage: photoSig.url,
+    hasSignature: photoSig.hasPhoto,
+    cgvAccepteesLe: o.cgvAccepteesLe?.toISOString() ?? null,
+    odooNom: o.odooNom ?? null,
+    odooId: o.odooId ?? null,
     statut: STATUT_UI[o.statut],
     payee: o.payee,
     photoLivraisonUrl: photoLiv.url,

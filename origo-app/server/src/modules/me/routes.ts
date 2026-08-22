@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma.js'
-import { mapClient } from '../../lib/mappers.js'
+import { hasherMotDePasse, verifierMotDePasse } from '../../lib/password.js'
+import { assertMotDePasseAcceptable } from '../../lib/mot-de-passe.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
-import { requireClient, requireStaff } from '../../plugins/auth.js'
+import { requireClient, requireStaff, authenticate, signerSession } from '../../plugins/auth.js'
+import { ROLE_UI, mapClient } from '../../lib/mappers.js'
 
 const clientInclude = {
   catalogue: true,
@@ -14,6 +16,81 @@ const clientInclude = {
 
 /** Self-service client (/me) + demandes produit (staff). */
 export async function meRoutes(app: FastifyInstance) {
+  app.patch('/api/v1/me/mot-de-passe', { preHandler: authenticate }, async (req) => {
+    const parsed = z
+      .object({
+        actuel: z.string().min(1),
+        nouveau: z.string().min(1),
+      })
+      .safeParse(req.body)
+    if (!parsed.success) throw new ValidationError('Données invalides', parsed.error.flatten())
+    if (parsed.data.actuel === parsed.data.nouveau) {
+      throw new ValidationError('Le nouveau mot de passe doit être différent')
+    }
+    assertMotDePasseAcceptable(parsed.data.nouveau)
+
+    const { actuel, nouveau } = parsed.data
+    const hash = await hasherMotDePasse(nouveau)
+
+    if (req.user.typ === 'staff') {
+      const staff = await prisma.staff.findUnique({ where: { id: req.user.sub } })
+      if (!staff) throw new NotFoundError('Compte introuvable')
+      if (!(await verifierMotDePasse(actuel, staff.motDePasseHash))) {
+        throw new ValidationError('Mot de passe actuel incorrect')
+      }
+      const updated = await prisma.staff.update({
+        where: { id: staff.id },
+        data: { motDePasseHash: hash, mdpAChanger: false },
+      })
+      const token = signerSession(app, {
+        typ: 'staff',
+        sub: updated.id,
+        role: updated.role,
+        code: updated.code,
+        nom: updated.nom,
+        mdpAChanger: false,
+      })
+      return {
+        ok: true,
+        token,
+        user: {
+          type: 'staff' as const,
+          id: updated.id,
+          code: updated.code,
+          nom: updated.nom,
+          role: ROLE_UI[updated.role],
+          mdpAChanger: false,
+        },
+      }
+    }
+
+    const client = await prisma.client.findUnique({ where: { id: req.user.sub } })
+    if (!client) throw new NotFoundError('Compte introuvable')
+    if (!(await verifierMotDePasse(actuel, client.motDePasseHash))) {
+      throw new ValidationError('Mot de passe actuel incorrect')
+    }
+    const updated = await prisma.client.update({
+      where: { id: client.id },
+      data: { motDePasseHash: hash, mdpAChanger: false },
+    })
+    const token = signerSession(app, {
+      typ: 'client',
+      sub: updated.id,
+      code: updated.code,
+      nom: updated.nom,
+      mdpAChanger: false,
+    })
+    const complet = await prisma.client.findUniqueOrThrow({
+      where: { id: updated.id },
+      include: clientInclude,
+    })
+    return {
+      ok: true,
+      token,
+      user: { type: 'client' as const, ...mapClient(complet), mdpAChanger: false },
+    }
+  })
+
   app.put('/api/v1/me/favoris', { preHandler: requireClient }, async (req) => {
     const clientId = req.user.sub
     const parsed = z.object({ productIds: z.array(z.string()) }).safeParse(req.body)

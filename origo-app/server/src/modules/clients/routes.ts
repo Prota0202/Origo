@@ -2,9 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma.js'
 import { hasherMotDePasse } from '../../lib/password.js'
+import { assertMotDePasseAcceptable } from '../../lib/mot-de-passe.js'
 import { mapClient } from '../../lib/mappers.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { requireStaff } from '../../plugins/auth.js'
+import { apresMutationClient } from '../../lib/odoo/sync.js'
 
 const clientInclude = {
   catalogue: true,
@@ -15,14 +17,15 @@ const clientInclude = {
 
 const createClientSchema = z.object({
   code: z.string().min(2).max(32),
-  motDePasse: z.string().min(8, 'Mot de passe : 8 caractères minimum'),
+  motDePasse: z.string().min(1),
   nom: z.string().min(1),
   ville: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
-  telephone: z.string().optional(),
-  adresse: z.string().optional(),
+  telephone: z.string().min(6, 'Téléphone de livraison requis'),
+  adresse: z.string().min(5, 'Adresse de livraison requise'),
   numeroTva: z.string().optional(),
   minCartons: z.number().int().positive().optional(),
+  modePaiement: z.enum(['sepa', 'stripe']).optional(),
   /** IDs produits du catalogue initial */
   productIds: z.array(z.string()).optional(),
 })
@@ -52,6 +55,7 @@ export async function clientRoutes(app: FastifyInstance) {
     const code = data.code.trim().toUpperCase()
     const exists = await prisma.client.findUnique({ where: { code } })
     if (exists) throw new ConflictError(`Le code client « ${code} » existe déjà`)
+    assertMotDePasseAcceptable(data.motDePasse)
 
     const hash = await hasherMotDePasse(data.motDePasse)
     const c = await prisma.client.create({
@@ -65,6 +69,7 @@ export async function clientRoutes(app: FastifyInstance) {
         adresse: data.adresse,
         numeroTva: data.numeroTva,
         minCartons: data.minCartons ?? 5,
+        modePaiement: data.modePaiement ?? 'sepa',
         catalogue: data.productIds?.length
           ? {
               create: data.productIds.map((productId) => ({ productId, visible: true })),
@@ -73,6 +78,7 @@ export async function clientRoutes(app: FastifyInstance) {
       },
       include: clientInclude,
     })
+    apresMutationClient(c.id)
     return mapClient(c)
   })
 
@@ -86,8 +92,9 @@ export async function clientRoutes(app: FastifyInstance) {
       adresse: z.string().nullable().optional(),
       numeroTva: z.string().nullable().optional(),
       minCartons: z.number().int().positive().optional(),
+      modePaiement: z.enum(['sepa', 'stripe']).optional(),
       actif: z.boolean().optional(),
-      motDePasse: z.string().min(8).optional(),
+      motDePasse: z.string().min(1).optional(),
     })
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError('Données invalides', parsed.error.flatten())
@@ -96,6 +103,7 @@ export async function clientRoutes(app: FastifyInstance) {
     if (!exists) throw new NotFoundError('Client introuvable')
 
     const d = parsed.data
+    if (d.motDePasse) assertMotDePasseAcceptable(d.motDePasse)
     const c = await prisma.client.update({
       where: { id },
       data: {
@@ -106,11 +114,16 @@ export async function clientRoutes(app: FastifyInstance) {
         ...(d.adresse !== undefined && { adresse: d.adresse }),
         ...(d.numeroTva !== undefined && { numeroTva: d.numeroTva }),
         ...(d.minCartons != null && { minCartons: d.minCartons }),
+        ...(d.modePaiement != null && { modePaiement: d.modePaiement }),
         ...(d.actif != null && { actif: d.actif }),
-        ...(d.motDePasse && { motDePasseHash: await hasherMotDePasse(d.motDePasse) }),
+        ...(d.motDePasse && {
+          motDePasseHash: await hasherMotDePasse(d.motDePasse),
+          mdpAChanger: false,
+        }),
       },
       include: clientInclude,
     })
+    apresMutationClient(c.id)
     return mapClient(c)
   })
 
@@ -150,6 +163,7 @@ export async function clientRoutes(app: FastifyInstance) {
       })
 
       const c = await prisma.client.findUniqueOrThrow({ where: { id }, include: clientInclude })
+      apresMutationClient(c.id)
       return mapClient(c)
     },
   )
@@ -184,6 +198,7 @@ export async function clientRoutes(app: FastifyInstance) {
       })
 
       const c = await prisma.client.findUniqueOrThrow({ where: { id }, include: clientInclude })
+      apresMutationClient(c.id)
       return mapClient(c)
     },
   )

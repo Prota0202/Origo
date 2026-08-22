@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { LogIn, AlertCircle } from 'lucide-react'
+import { useCompany } from '../company.jsx'
 
 export default function Login({ onLogin }) {
+  const company = useCompany()
   const [code, setCode] = useState('')
   const [motDePasse, setMotDePasse] = useState('')
   const [erreur, setErreur] = useState(null)
@@ -29,16 +31,16 @@ export default function Login({ onLogin }) {
       <form className="login-card" onSubmit={connecter}>
         <h1 className="page-title">Connexion</h1>
         <p className="page-subtitle" style={{ marginBottom: 16 }}>
-          Accédez à votre catalogue personnalisé
+          Restaurants et équipe ORIGO
         </p>
 
         <label className="champ">
-          <span>Code client</span>
+          <span>Code</span>
           <input
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="ex. BOMBAY"
+            placeholder="Votre code"
             autoComplete="username"
             autoCapitalize="characters"
             required
@@ -69,8 +71,12 @@ export default function Login({ onLogin }) {
         </button>
 
         <p className="login-aide">
-          Pas encore de compte&nbsp;? Contactez ORIGO pour établir votre catalogue.
+          Pas encore de compte&nbsp;? Appelez{' '}
+          <a href={company.phoneLink}>{company.phone}</a>
+          {' '}ou écrivez à{' '}
+          <a href={`mailto:${company.email}`}>{company.email}</a>.
         </p>
+        <p className="login-aide">{company.address}</p>
       </form>
     </div>
   )

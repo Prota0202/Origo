@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma.js'
 import { mapProduct } from '../../lib/mappers.js'
-import { persistImageField } from '../../lib/uploads.js'
-import { NotFoundError, ValidationError } from '../../lib/errors.js'
+import { persistImageField, supprimerFichierUpload } from '../../lib/uploads.js'
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { authenticate, requireStaff } from '../../plugins/auth.js'
+import { apresAjustementStock, apresMutationProduit } from '../../lib/odoo/sync.js'
 
 const productBody = z.object({
   sku: z.string().min(1).optional(),
@@ -72,6 +73,7 @@ export async function productRoutes(app: FastifyInstance) {
         remisePourcent: data.remisePourcent ?? null,
       },
     })
+    apresMutationProduit(p.id, { alignerStock: (data.stock ?? 0) > 0 })
     return mapProduct(p)
   })
 
@@ -103,6 +105,10 @@ export async function productRoutes(app: FastifyInstance) {
         ...(d.sku != null && { sku: d.sku }),
       },
     })
+    if (photoUrl !== undefined && exists.photoUrl && photoUrl !== exists.photoUrl) {
+      supprimerFichierUpload(exists.photoUrl)
+    }
+    apresMutationProduit(p.id, { alignerStock: d.stock != null && d.stock !== exists.stock })
     return mapProduct(p)
   })
 
@@ -117,25 +123,30 @@ export async function productRoutes(app: FastifyInstance) {
       if (!body.success) throw new ValidationError('delta requis')
 
       const p = await prisma.$transaction(async (tx) => {
-        const product = await tx.product.findUnique({ where: { id } })
-        if (!product) throw new NotFoundError('Produit introuvable')
-
-        const stock = Math.max(0, product.stock + body.data.delta)
-        const updated = await tx.product.update({
-          where: { id },
-          data: { stock },
-        })
+        const rows = await tx.$queryRaw<{ stock: number }[]>`
+          UPDATE "Product" SET stock = stock + ${body.data.delta}
+          WHERE id = ${id} AND stock + ${body.data.delta} >= 0
+          RETURNING stock`
+        if (rows.length === 0) {
+          const product = await tx.product.findUnique({ where: { id } })
+          if (!product) throw new NotFoundError('Produit introuvable')
+          throw new ConflictError(`Stock insuffisant pour « ${product.nom} »`, {
+            disponible: product.stock,
+            demande: -body.data.delta,
+          })
+        }
         await tx.stockMouvement.create({
           data: {
             productId: id,
             type: 'AJUSTEMENT',
             quantite: body.data.delta,
-            stockApres: stock,
+            stockApres: rows[0].stock,
             note: body.data.note,
           },
         })
-        return updated
+        return tx.product.findUniqueOrThrow({ where: { id } })
       })
+      apresAjustementStock(p.id)
       return mapProduct(p)
     },
   )

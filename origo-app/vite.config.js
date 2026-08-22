@@ -9,6 +9,15 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // Change ce cacheId à chaque fois qu'un vieux téléphone reste coincé
+        // sur l'ancienne PWA après un déploiement.
+        cacheId: 'origo-20260820-signature',
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+      },
       manifest: {
         name: 'ORIGO — Commande Pro',
         short_name: 'Origo',

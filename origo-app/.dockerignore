@@ -1,0 +1,12 @@
+# Contexte du build front (Dockerfile.web) : l'API a son propre contexte ./server
+server
+node_modules
+dist
+dev-dist
+backups
+scripts
+.git
+.env
+.env.*
+*.log
+*.md

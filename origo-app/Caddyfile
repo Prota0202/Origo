@@ -1,0 +1,59 @@
+# Front + API sur la même origine : le navigateur n'a jamais besoin de CORS,
+# et changer de domaine ne demande aucun rebuild du front.
+{
+	email {$ACME_EMAIL}
+	# Pour tester les certificats sans se faire rate-limiter par Let's Encrypt,
+	# décommenter le temps des essais :
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle /uploads/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		root * /srv
+
+		# Assets Vite : nom haché, donc cache long sans risque
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		# Coquille PWA : jamais en cache, sinon un client reste bloqué
+		# sur une vieille version après un déploiement
+		@shell path / /index.html /sw.js /registerSW.js /manifest.webmanifest
+		header @shell Cache-Control "no-cache"
+
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+	}
+
+	# HSTS uniquement en HTTPS : envoyé sur un test HTTP local, il forcerait
+	# le navigateur à passer localhost en HTTPS pour tous les projets
+	@https expression {http.request.scheme} == "https"
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	log {
+		output stdout
+	}
+}
+
+# Sites additionnels déposés par une surcouche (Odoo : voir docker-compose.odoo.yml).
+# Un glob sans correspondance est valide : ORIGO reste déployable seul, sans Odoo
+# et sans reconstruire l'image.
+import /etc/caddy/conf.d/*.caddy

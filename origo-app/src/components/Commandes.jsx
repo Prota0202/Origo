@@ -4,7 +4,8 @@ import {
   Pencil, Ban, Clock, Camera,
 } from 'lucide-react'
 import { euros } from '../data.js'
-import { telechargerPDF, envoyerParEmail } from '../pdf.js'
+import { envoyerParEmail, htDocument, libelleDocument, portDocument } from '../document-montant.js'
+import { TEXTE_PAIEMENT_SEPA } from '../frais-livraison.js'
 import { useCompany, getDelaiModificationMs } from '../company.jsx'
 import ModifierCommande from './ModifierCommande.jsx'
 
@@ -20,10 +21,8 @@ const CLASSE_STATUT = {
 const peutModifierSeul = (c) =>
   c.statut === 'Confirmée' && Date.now() - c.ts <= getDelaiModificationMs()
 
-// Facture et bon de commande ne sont générés qu'une fois la livraison
-// confirmée (checklist livreur) — pas avant, pour ne jamais facturer ou
-// documenter une commande qui n'est pas encore passée par ce contrôle.
-const documentsDisponibles = (c) => c.statut === 'Livrée' || c.statut === 'Livrée partiellement'
+const bonDisponible = (c) => c.statut !== 'Annulée'
+const factureDisponible = (c) => c.statut === 'Livrée' || c.statut === 'Livrée partiellement'
 
 const formatRestant = (ms) => {
   const min = Math.max(0, Math.ceil(ms / 60000))
@@ -35,17 +34,19 @@ function DocumentModal({ type, commande, onClose }) {
   const company = useCompany()
   const tvaRate = company.tvaRate ?? 0.21
   const estFacture = type === 'facture'
-  // La facture ne porte que sur les articles réellement livrés
+  const lib = libelleDocument(type, company.factureLegale)
+  // La facture / le relevé ne porte que sur les articles réellement livrés
   const lignesDoc = estFacture ? commande.lignes.filter((l) => l.livree !== false) : commande.lignes
-  const ht = lignesDoc.reduce((s, l) => s + l.qty * l.prixCarton, 0)
-  const tva = ht * tvaRate
+  const port = portDocument(commande)
+  const ht = htDocument(type, commande)
+  const tva = Math.round(ht * tvaRate * 100) / 100
   return (
     <>
       <div className="overlay" onClick={onClose} aria-hidden="true" />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-doc">
         <div className="sheet-header">
           <h2 id="titre-doc" className="sheet-title">
-            {estFacture ? 'Facture' : 'Bon de commande'} {commande.numero}
+            {lib.court} {commande.numero}
           </h2>
           <button className="icon-btn" style={{ color: 'var(--gray-600)' }} onClick={onClose} aria-label="Fermer le document">
             <X size={22} />
@@ -80,11 +81,19 @@ function DocumentModal({ type, commande, onClose }) {
                   <td className="num">{euros(l.qty * l.prixCarton)}</td>
                 </tr>
               ))}
+              {port > 0 && (
+                <tr>
+                  <td>Frais de livraison</td>
+                  <td className="num">1</td>
+                  <td className="num">{euros(port)}</td>
+                  <td className="num">{euros(port)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
           {estFacture && commande.lignes.some((l) => l.qtyCommandee != null) && (
             <p style={{ color: 'var(--red-600)', fontSize: 12, marginBottom: 8 }}>
-              Certains articles ont été livrés en quantité réduite ou non livrés — cette facture reflète les quantités réellement livrées.
+              Certains articles ont été livrés en quantité réduite ou non livrés — ce document reflète les quantités réellement livrées.
             </p>
           )}
           {estFacture ? (
@@ -97,13 +106,26 @@ function DocumentModal({ type, commande, onClose }) {
             <div className="doc-total"><span>Total HT</span><span>{euros(ht)}</span></div>
           )}
           <p style={{ color: 'var(--gray-400)', fontSize: 12, marginTop: 12 }}>
+            {commande.odooNom ? `Réf. Odoo : ${commande.odooNom}. ` : ''}
+            {company.textePaiementSepa || TEXTE_PAIEMENT_SEPA}
+            {commande.signatureNom ? ` Signé par ${commande.signatureNom}.` : ''}
+          </p>
+          {(commande.signatureImage || commande.signatureImageUrl) && (
+            <div className="preuve-signature">
+              <img src={commande.signatureImage || commande.signatureImageUrl} alt={`Signature de ${commande.signatureNom || 'le client'}`} />
+            </div>
+          )}
+          <p style={{ color: 'var(--gray-400)', fontSize: 12, marginTop: 12 }}>
             {estFacture
-              ? 'Facture envoyée par e-mail au client et à ORIGO.'
-              : 'Bon de commande transmis à ORIGO pour préparation.'}
+              ? lib.note
+              : 'Bon de commande. Si Odoo a déjà le devis, le PDF est le même modèle que dans Ventes.'}
           </p>
         </div>
         <div className="sheet-footer">
-          <button className="btn btn-primary" onClick={() => telechargerPDF(type, commande)}>
+          <button className="btn btn-primary" onClick={async () => {
+            const { telechargerDocument } = await import('../pdf.js')
+            await telechargerDocument(type, commande)
+          }}>
             <Download size={18} aria-hidden="true" /> Télécharger le PDF
           </button>
           <button className="btn btn-secondary" onClick={() => envoyerParEmail(type, commande)}>
@@ -152,7 +174,8 @@ function GraphConsommation({ commandes }) {
   )
 }
 
-export default function Commandes({ commandes, client, produits, onModifier, onAnnuler }) {
+export default function Commandes({ commandes, client, produits, onModifier, onAnnuler, onAllerCatalogue }) {
+  const company = useCompany()
   const [doc, setDoc] = useState(null)
   const [modifierCible, setModifierCible] = useState(null)
   const [maintenant, setMaintenant] = useState(() => Date.now())
@@ -171,14 +194,19 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
 
   return (
     <section aria-labelledby="titre-commandes">
-      <h1 id="titre-commandes" className="page-title">Commandes &amp; Factures</h1>
-      <p className="page-subtitle">Historique, factures et bons de commande</p>
+      <h1 id="titre-commandes" className="page-title">Commandes</h1>
+      <p className="page-subtitle">Historique, documents et bons de commande</p>
 
       {commandes.length === 0 ? (
         <div className="empty">
           <ClipboardList size={40} aria-hidden="true" />
           <p>Aucune commande pour le moment.</p>
-          <p style={{ fontSize: 14 }}>Vos commandes validées apparaîtront ici avec leur facture.</p>
+          <p style={{ fontSize: 14 }}>Vos commandes validées apparaîtront ici, avec le bon dès la confirmation.</p>
+          {onAllerCatalogue && (
+            <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={onAllerCatalogue}>
+              Voir le catalogue
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -222,9 +250,9 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
                 <p className="info-livraison">
                   <CreditCard size={15} aria-hidden="true" />
                   {c.payee ? (
-                    <span style={{ color: 'var(--green-600)', fontWeight: 600 }}>Facture payée</span>
+                    <span style={{ color: 'var(--green-600)', fontWeight: 600 }}>Payée</span>
                   ) : (
-                    <span>Paiement à 30 jours — en attente</span>
+                    <span>Domiciliation SEPA : le 15 et le dernier jour du mois</span>
                   )}
                 </p>
                 {modifiable && (
@@ -232,22 +260,22 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
                     <Clock size={15} aria-hidden="true" /> Modifiable ou annulable encore {formatRestant(restant)}
                   </p>
                 )}
-                {!documentsDisponibles(c) && (
+                {!factureDisponible(c) && c.statut !== 'Annulée' && (
                   <p className="info-livraison" style={{ color: 'var(--gray-400)' }}>
-                    <FileText size={15} aria-hidden="true" />
-                    Facture et bon de commande disponibles une fois la livraison confirmée par le livreur
+                    <Receipt size={15} aria-hidden="true" />
+                    {libelleDocument('facture', company.factureLegale).court} disponible une fois la livraison confirmée
                   </p>
                 )}
                 <div className="commande-actions">
-                  {documentsDisponibles(c) && (
-                    <>
-                      <button className="btn btn-ghost" onClick={() => setDoc({ type: 'facture', commande: c })}>
-                        <Receipt size={16} aria-hidden="true" /> Facture
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => setDoc({ type: 'bon', commande: c })}>
-                        <FileText size={16} aria-hidden="true" /> Bon de commande
-                      </button>
-                    </>
+                  {bonDisponible(c) && (
+                    <button className="btn btn-secondary" onClick={() => setDoc({ type: 'bon', commande: c })}>
+                      <FileText size={16} aria-hidden="true" /> Bon de commande
+                    </button>
+                  )}
+                  {factureDisponible(c) && (
+                    <button className="btn btn-ghost" onClick={() => setDoc({ type: 'facture', commande: c })}>
+                      <Receipt size={16} aria-hidden="true" /> {libelleDocument('facture', company.factureLegale).court}
+                    </button>
                   )}
                   {modifiable && (
                     <>

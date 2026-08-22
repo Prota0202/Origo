@@ -1,0 +1,43 @@
+# Odoo sur son propre sous-domaine, servi par le même Caddy qu'ORIGO.
+# Monté dans /etc/caddy/conf.d/ par docker-compose.odoo.yml, donc absent — et
+# sans effet — quand on déploie ORIGO seul.
+
+{$ODOO_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Odoo 16+ sert les websockets par un port distinct (gevent). Sans cette
+	# route, l'interface se recharge en boucle et les notifications ne
+	# fonctionnent pas.
+	handle /websocket {
+		reverse_proxy odoo:8072 {
+			# -1 : pas de tampon, sinon le flux temps réel arrive par paquets.
+			flush_interval -1
+		}
+	}
+
+	handle /longpolling/* {
+		reverse_proxy odoo:8072 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy odoo:8069
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	# Pas de X-Frame-Options DENY ici : Odoo utilise des iframes pour les
+	# aperçus de documents, et l'interface casserait.
+
+	@https expression {http.request.scheme} == "https"
+	header @https Strict-Transport-Security "max-age=31536000"
+
+	log {
+		output stdout
+	}
+}

@@ -1,0 +1,43 @@
+# Bac à sable Odoo 19 Community, isolé de la stack ORIGO.
+# Sert à trancher les questions de l'architecture hybride (voir ../ODOO.md)
+# sans engager la base de production.
+#
+#   docker compose -f odoo-lab/docker-compose.yml up -d
+#   → http://localhost:8069   (créer la base « origo_lab »)
+#
+# Postgres n'est pas publié sur l'hôte : pas de conflit avec le :5432 d'ORIGO.
+
+services:
+  odoo-db:
+    image: postgres:16-alpine
+    container_name: origo-odoo-lab-db
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    volumes:
+      - odoo_lab_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U odoo']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    image: odoo:19
+    container_name: origo-odoo-lab
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      USER: odoo
+      PASSWORD: odoo
+    ports:
+      - '8069:8069'
+    volumes:
+      - odoo_lab_data:/var/lib/odoo
+
+volumes:
+  odoo_lab_pg:
+  odoo_lab_data:

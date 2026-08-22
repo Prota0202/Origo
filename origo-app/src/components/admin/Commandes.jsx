@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
   ClipboardList, ClipboardCheck, Euro, Ban, PackageCheck, Truck, RotateCcw, Clock, Camera, Pencil, Undo2,
+  AlertTriangle, Printer,
 } from 'lucide-react'
 import { euros } from '../../data.js'
-import { getDelaiModificationMs } from '../../company.jsx'
+import { getCompany, getDelaiModificationMs } from '../../company.jsx'
+import { libelleDocument } from '../../document-montant.js'
 import { OrdersApi, ProductsApi } from '../../api/index.js'
 import ModifierCommande from '../ModifierCommande.jsx'
 import ConfirmerLivraison from '../ConfirmerLivraison.jsx'
@@ -80,9 +82,22 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
   // corriger une erreur même après le début de préparation.
   const annulerCommande = async (cmd) => {
     if (cmd.statut === 'Annulée') return
-    if (!window.confirm(`Annuler la commande ${cmd.numero} de ${cmd.clientNom} ? Le stock sera réintégré.`)) return
+    const dejaLivree = ['Livrée', 'Livrée partiellement'].includes(cmd.statut)
+
+    // Sur une commande livrée, la marchandise est chez le client : la
+    // réintégrer d'office créerait du stock qui n'existe pas physiquement.
+    let remiseEnStock
+    if (dejaLivree) {
+      if (!window.confirm(`Annuler la commande ${cmd.numero} de ${cmd.clientNom} , déjà livrée ?`)) return
+      remiseEnStock = window.confirm(
+        'La marchandise est-elle revenue en stock ?\n\nOK = oui, réintégrer au stock\nAnnuler = non, elle reste chez le client',
+      )
+    } else if (!window.confirm(`Annuler la commande ${cmd.numero} de ${cmd.clientNom} ? Le stock sera réintégré.`)) {
+      return
+    }
+
     try {
-      await OrdersApi.annulerAdmin(cmd.id)
+      await OrdersApi.annulerAdmin(cmd.id, remiseEnStock)
       await refresh()
     } catch (e) {
       alert(e.message)
@@ -200,6 +215,14 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                     Non livré : {cmd.lignes.filter((l) => l.qtyCommandee != null).map((l) => `${l.qtyCommandee - l.qty} × ${l.nom}`).join(' · ')}
                   </p>
                 )}
+                {(cmd.signatureImage || cmd.signatureImageUrl) && (
+                  <div className="preuve-signature">
+                    <img src={cmd.signatureImage || cmd.signatureImageUrl} alt={`Signature ${cmd.signatureNom || cmd.clientNom || ''}`} />
+                    <p className="ligne-detail" style={{ marginTop: 4 }}>
+                      Signé par {cmd.signatureNom || 'le client'}
+                    </p>
+                  </div>
+                )}
                 {(cmd.photoLivraison || cmd.hasPhotoLivraison) && (
                   <button
                     type="button"
@@ -251,7 +274,29 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                       {cmd.payee ? 'Payée ✓' : 'Marquer payée'}
                     </button>
                   )}
-                  {cmd.statut === 'Confirmée' && (
+                  {cmd.statut !== 'Annulée' && (
+                    <button
+                      className="btn btn-ghost"
+                      onClick={async () => {
+                        const { telechargerDocument } = await import('../../pdf.js')
+                        await telechargerDocument('bon', cmd)
+                      }}
+                    >
+                      <Printer size={16} aria-hidden="true" /> Bon
+                    </button>
+                  )}
+                  {['Livrée', 'Livrée partiellement'].includes(cmd.statut) && (
+                    <button
+                      className="btn btn-ghost"
+                      onClick={async () => {
+                        const { telechargerDocument } = await import('../../pdf.js')
+                        await telechargerDocument('facture', cmd)
+                      }}
+                    >
+                      <Printer size={16} aria-hidden="true" /> {libelleDocument('facture', getCompany().factureLegale).court}
+                    </button>
+                  )}
+                  {cmd.statut === 'Confirmée' && admin.role !== 'livreur' && (
                     <button className="btn btn-primary" onClick={() => accepterCommande(cmd)}>
                       <ClipboardCheck size={16} aria-hidden="true" /> Accepter la commande
                     </button>
@@ -261,29 +306,35 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                       <Truck size={16} aria-hidden="true" /> Démarrer la tournée
                     </button>
                   )}
-                  {cmd.statut === 'En livraison' && (
+                  {cmd.statut === 'En livraison' && admin.role !== 'preparation' && (
                     <button className="btn btn-primary" onClick={() => setLivraisonCible(cmd)}>
                       <PackageCheck size={16} aria-hidden="true" /> Confirmer la livraison
                     </button>
                   )}
+                  {/* Rouvrir = repasser en « Confirmée ». Sur une commande
+                      livrée, le serveur annule aussi les effets de la
+                      livraison (quantités et stock des manquants). */}
                   {admin.role === 'direction' &&
-                    ['Livrée', 'Livrée partiellement'].includes(cmd.statut) &&
+                    ['Préparée', 'En livraison', 'Livrée', 'Livrée partiellement'].includes(cmd.statut) &&
                     peutToucherLivree(cmd) && (
                       <button className="btn btn-ghost" onClick={() => rouvrirCommande(cmd)}>
                         <RotateCcw size={16} aria-hidden="true" /> Rouvrir
                       </button>
                     )}
+                  {/* Modifier seulement tant que rien n'est préparé : au-delà,
+                      recalculer les lignes réécrirait le montant d'une
+                      commande déjà partie. Il faut rouvrir, ou faire un retour. */}
+                  {admin.role === 'direction' && cmd.statut === 'Confirmée' && (
+                    <button className="btn btn-secondary" onClick={() => setModifierCible(cmd)}>
+                      <Pencil size={16} aria-hidden="true" /> Modifier
+                    </button>
+                  )}
                   {admin.role === 'direction' &&
                     cmd.statut !== 'Annulée' &&
                     (!['Livrée', 'Livrée partiellement'].includes(cmd.statut) || peutToucherLivree(cmd)) && (
-                      <>
-                        <button className="btn btn-secondary" onClick={() => setModifierCible(cmd)}>
-                          <Pencil size={16} aria-hidden="true" /> Modifier
-                        </button>
-                        <button className="btn btn-secondary btn-danger" onClick={() => annulerCommande(cmd)}>
-                          <Ban size={16} aria-hidden="true" /> Annuler
-                        </button>
-                      </>
+                      <button className="btn btn-secondary btn-danger" onClick={() => annulerCommande(cmd)}>
+                        <Ban size={16} aria-hidden="true" /> Annuler
+                      </button>
                     )}
                 </div>
               </article>
@@ -310,6 +361,16 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                       <span className={`statut ${CLASSE_STATUT[cmd.statut]}`}>{cmd.statut}</span>
                     </div>
                     <p className="commande-detail">{cmd.numero} · {cmd.cartons} cartons · prévu {cmd.livraisonPrevue ?? '—'}</p>
+                    {(cmd.clientAdresse || cmd.clientTelephone) && (
+                      <p className="ligne-detail">
+                        {[cmd.clientAdresse, cmd.clientTelephone].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    {cmd.clientTelephone && (
+                      <a className="btn btn-ghost" style={{ minHeight: 36, marginTop: 6 }} href={`tel:${cmd.clientTelephone.replace(/\s/g, '')}`}>
+                        Appeler
+                      </a>
+                    )}
                     <p className="ligne-detail">
                       {cmd.lignes.map((l) => `${l.qty} × ${l.nom}`).join(' · ')}
                     </p>
@@ -329,7 +390,7 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
                         </button>
                       </div>
                     )}
-                    {cmd.statut === 'En livraison' && (
+                    {cmd.statut === 'En livraison' && admin.role !== 'preparation' && (
                       <div className="commande-actions" style={{ marginTop: 10 }}>
                         <button className="btn btn-primary" onClick={() => setLivraisonCible(cmd)}>
                           <PackageCheck size={16} aria-hidden="true" /> Confirmer la livraison

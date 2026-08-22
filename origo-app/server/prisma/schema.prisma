@@ -39,11 +39,30 @@ model Staff {
   nom            String
   role           RoleStaff
   actif          Boolean   @default(true)
+  /// true = la session ne peut que changer le mot de passe (seed / fuite).
+  mdpAChanger    Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   commandesPreparees OrderItem[] @relation("PreparePar")
   livraisons         Order[]     @relation("LivrePar")
+}
+
+/// Fiche société affichée sur les bons / l'écran service client.
+/// Une seule ligne (`id = origo`). Les env COMPANY_* servent de repli
+/// tant que la direction n'a rien saisi ici.
+model Societe {
+  id        String   @id @default("origo")
+  nom       String
+  adresse   String   @default("")
+  email     String   @default("")
+  telephone String   @default("")
+  /// Vide jusqu'au n° TVA (début septembre). Ne jamais afficher un placeholder.
+  numeroTva String   @default("")
+  horaires  String   @default("Lun – Ven · 8h00 – 18h00")
+  /// Conditions affichées et signées au panier. Vide = texte par défaut serveur.
+  conditionsGenerales String @default("")
+  updatedAt DateTime @updatedAt
 }
 
 /// Restaurant / client B2B
@@ -58,7 +77,19 @@ model Client {
   adresse        String?
   numeroTva      String?
   minCartons     Int      @default(5)
+  /// `sepa` (défaut, 15 et fin de mois) ou `stripe` (paiement à la commande).
+  modePaiement   String   @default("sepa")
   actif          Boolean  @default(true)
+  mdpAChanger    Boolean  @default(false)
+  stripeCustomerId           String?   @unique
+  stripeSepaPaymentMethodId  String?
+  sepaIbanLast4              String?
+  sepaMandatId               String?
+  sepaMandatAccepteLe        DateTime?
+  /// Id du `res.partner` chez Odoo. Null tant que jamais synchronisé.
+  odooId         Int?     @unique
+  /// Id de la `product.pricelist` rattachée à ce partenaire.
+  odooTarifId    Int?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -66,8 +97,9 @@ model Client {
   favoris   ClientFavori[]
   notes     ClientNote[]
   paliers   PrixPalier[]
-  commandes Order[]
-  demandes  DemandeProduit[]
+  commandes     Order[]
+  demandes      DemandeProduit[]
+  prelevements  PrelevementSepa[]
 }
 
 model Product {
@@ -85,6 +117,10 @@ model Product {
   remiseSeuil     Int?
   remisePourcent  Decimal? @db.Decimal(5, 2)
   actif           Boolean  @default(true)
+  /// Id du `product.template` chez Odoo. Null tant que jamais synchronisé.
+  odooId          Int?     @unique
+  /// Id du `product.product` (variante unique). Nécessaire pour poser un stock.
+  odooVarianteId  Int?     @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -169,26 +205,50 @@ model Order {
   livreeLe            DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
+  /// Frais de livraison HT figés à la commande (0 si franco ≥ 150 € HT articles).
+  fraisLivraisonHT    Decimal        @default(0) @db.Decimal(10, 2)
+  cgvAccepteesLe      DateTime?
+  signatureNom        String?
+  /// Trait manuscrit capturé dans l’app (fichier /uploads, pas du base64).
+  signatureImageUrl   String?
+  /// Nom du `sale.order` Odoo (S00012), pour que le PDF app = le PDF Odoo.
+  odooNom             String?
+  odooFactureId       Int?           @unique
+  stripeSessionId     String?
+  /// Id du `sale.order` Odoo. Null tant que la poussée n'a pas abouti.
+  odooId              Int?           @unique
+  /// `attente` | `ok` | `erreur`. Null = commande d'avant la liaison ventes.
+  odooSyncStatut      String?
+  odooSyncErreur      String?
+  odooSyncLe          DateTime?
+  prelevementSepaId   String?
 
   client          Client           @relation(fields: [clientId], references: [id])
   livrePar        Staff?           @relation("LivrePar", fields: [livreParId], references: [id])
   items           OrderItem[]
   stockMouvements StockMouvement[]
   retours         RetourCommande[]
+  prelevementSepa PrelevementSepa? @relation(fields: [prelevementSepaId], references: [id])
 
   @@index([clientId])
   @@index([statut])
   @@index([createdAt])
   @@index([updatedAt])
+  @@index([odooSyncStatut])
+  @@index([prelevementSepaId])
 }
 
 model OrderItem {
-  id              String    @id @default(cuid())
-  orderId         String
-  productId       String
-  nomSnapshot     String
+  id          String @id @default(cuid())
+  orderId     String
+  productId   String
+  nomSnapshot String
+  /// Quantité facturée : réduite à la livraison partielle ou après un retour
   quantiteCartons Int
-  prixUnitaire    Decimal   @db.Decimal(10, 2)
+  /// Quantité commandée à l'origine, jamais modifiée après création.
+  /// Sans elle, impossible de rouvrir une commande livrée sans corrompre stock et total.
+  quantiteCommandee Int?
+  prixUnitaire      Decimal @db.Decimal(10, 2)
   /// null = pas encore traité à la livraison ; true/false = livré ou non
   livree          Boolean?
   coche           Boolean   @default(false)
@@ -251,6 +311,26 @@ model RetourLigne {
   remisEnStock Boolean @default(true)
 
   retour RetourCommande @relation(fields: [retourId], references: [id], onDelete: Cascade)
+}
+
+/// Prélèvement SEPA groupé (15 ou dernier jour du mois, fuseau Bruxelles).
+model PrelevementSepa {
+  id                    String   @id @default(cuid())
+  clientId              String
+  periodeCle            String
+  montantCents          Int
+  /// attente | envoye | paye | echec
+  statut                String
+  stripePaymentIntentId String?  @unique
+  erreur                String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  client     Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  commandes  Order[]
+
+  @@unique([clientId, periodeCle])
+  @@index([statut])
 }
 
 /// Compteur atomique pour numéros de commande CMD-0001…

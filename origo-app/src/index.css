@@ -200,7 +200,9 @@ a:focus-visible {
   font-weight: 600;
 }
 
-.champ input {
+.champ input,
+.champ textarea,
+.champ select {
   font: inherit;
   font-weight: 400;
   min-height: 48px;
@@ -212,13 +214,22 @@ a:focus-visible {
   transition: border-color 0.2s ease;
 }
 
-.champ input:focus {
+.champ textarea {
+  min-height: 120px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.champ input:focus,
+.champ textarea:focus,
+.champ select:focus {
   outline: none;
   border-color: var(--orange-500);
   box-shadow: 0 0 0 3px var(--orange-100);
 }
 
-.champ input::placeholder {
+.champ input::placeholder,
+.champ textarea::placeholder {
   color: var(--gray-400);
 }
 
@@ -226,6 +237,10 @@ a:focus-visible {
   text-align: center;
   color: var(--gray-400);
   font-size: 13px;
+}
+
+.login-aide a {
+  color: var(--orange-600);
 }
 
 /* ---------- Main / layout ---------- */
@@ -553,6 +568,16 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.bloc-preuve-commande {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--gray-100);
 }
 
 .ligne-panier {
@@ -633,6 +658,100 @@ a:focus-visible {
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 500;
+}
+
+.cgv-box {
+  max-height: 140px;
+  overflow: auto;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--gray-600);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.check-cgv {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray-900);
+}
+
+.check-cgv input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.pad-signature-bloc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.champ-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.lien-effacer {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--orange-600);
+  text-decoration: underline;
+}
+
+.pad-signature-wrap {
+  position: relative;
+}
+
+.pad-signature {
+  width: 100%;
+  height: 128px;
+  display: block;
+  background: #fff;
+  border: 1px dashed var(--gray-400);
+  border-radius: 12px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.pad-signature-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--gray-400);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.preuve-signature {
+  margin-top: 10px;
+  max-width: 220px;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.preuve-signature img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 /* ---------- Commandes ---------- */
@@ -924,7 +1043,29 @@ a:focus-visible {
   user-select: all;
 }
 
-/* ---------- Toast ---------- */
+.bandeau-hors-ligne {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+  z-index: 70;
+  background: var(--red-600);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+
+.champ select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  background: var(--white);
+}
 .toast {
   position: fixed;
   bottom: calc(var(--tabbar-h) + 16px);

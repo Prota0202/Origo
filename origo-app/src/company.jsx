@@ -1,16 +1,23 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { AuthApi } from './api/index.js'
+import { CGV_DEFAUT, TEXTE_PAIEMENT_SEPA } from './frais-livraison.js'
 
 const defaults = {
   name: 'ORIGO',
-  address: 'Belgique',
+  address: 'Avenue des Anciens Combattants 23, 1140 Evere',
   email: 'pro@origo.be',
-  phone: '+32 2 000 00 00',
-  phoneLink: 'tel:+3220000000',
+  phone: '+32 468 08 96 03',
+  phoneLink: 'tel:+32468089603',
   vat: '',
+  factureLegale: false,
   tvaRate: 0.21,
   delaiModificationMs: 60 * 60 * 1000,
   horaires: 'Lun – Ven · 8h00 – 18h00',
+  conditionsGenerales: CGV_DEFAUT,
+  textePaiementSepa: TEXTE_PAIEMENT_SEPA,
+  seuilFrancoHT: 150,
+  fraisLivraisonHT: 10,
+  paiementStripeActif: false,
 }
 
 const CompanyContext = createContext(defaults)
@@ -18,25 +25,38 @@ const CompanyContext = createContext(defaults)
 export function CompanyProvider({ children }) {
   const [company, setCompany] = useState(defaults)
 
-  useEffect(() => {
+  const charger = () =>
     AuthApi.company()
-      .then((c) =>
-        setCompany({
+      .then((c) => {
+        const next = {
           name: c.name ?? defaults.name,
           address: c.address ?? defaults.address,
           email: c.email ?? defaults.email,
           phone: c.phone ?? defaults.phone,
           phoneLink: c.phoneLink ?? `tel:${String(c.phone ?? '').replace(/\s/g, '')}`,
           vat: c.vat ?? '',
+          factureLegale: Boolean(c.factureLegale ?? c.vat),
           tvaRate: Number(c.tvaRate ?? 0.21),
           delaiModificationMs: Number(c.delaiModificationMs ?? defaults.delaiModificationMs),
           horaires: c.horaires ?? defaults.horaires,
-        }),
-      )
+          conditionsGenerales: c.conditionsGenerales || CGV_DEFAUT,
+          textePaiementSepa: c.textePaiementSepa ?? defaults.textePaiementSepa,
+          seuilFrancoHT: Number(c.seuilFrancoHT ?? 150),
+          fraisLivraisonHT: Number(c.fraisLivraisonHT ?? 10),
+          paiementStripeActif: Boolean(c.paiementStripeActif),
+        }
+        setCompany(next)
+        setCompanySnapshot(next)
+      })
       .catch(() => {})
-  }, [])
 
-  return <CompanyContext.Provider value={company}>{children}</CompanyContext.Provider>
+  useEffect(() => { void charger() }, [])
+
+  return (
+    <CompanyContext.Provider value={{ ...company, recharger: charger }}>
+      {children}
+    </CompanyContext.Provider>
+  )
 }
 
 export function useCompany() {

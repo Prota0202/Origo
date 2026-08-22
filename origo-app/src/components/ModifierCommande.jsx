@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Minus, Plus, Trash2, AlertCircle, CheckCircle2, Check } from 'lucide-react'
 import { euros } from '../data.js'
+import { fraisLivraisonHT } from '../frais-livraison.js'
 
 // Modale partagée (client + admin) pour ajuster les quantités d'une commande
 // déjà validée. Le prix unitaire par ligne reste celui déjà appliqué à la
@@ -25,6 +26,8 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
   const lignesFinales = lignesAffichees.filter((l) => (quantites[l.id] ?? 0) > 0)
   const totalCartons = lignesFinales.reduce((s, l) => s + quantites[l.id], 0)
   const totalPrix = lignesFinales.reduce((s, l) => s + quantites[l.id] * l.prixCarton, 0)
+  const frais = fraisLivraisonHT(totalPrix)
+  const totalAvecPort = Math.round((totalPrix + frais) * 100) / 100
   const manque = minCartons ? minCartons - totalCartons : 0
   const toutRetire = totalCartons === 0
 
@@ -110,7 +113,15 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
           )}
           <div className="total-row">
             <span>{totalCartons} {totalCartons > 1 ? 'cartons' : 'carton'}</span>
-            <strong>{euros(totalPrix)} HT</strong>
+            <span>{euros(totalPrix)} HT</span>
+          </div>
+          <div className="total-row">
+            <span>{frais === 0 ? 'Livraison (franco dès 150 € HT)' : 'Frais de livraison'}</span>
+            <span>{frais === 0 ? 'offerts' : euros(frais)}</span>
+          </div>
+          <div className="total-row">
+            <span>Total</span>
+            <strong>{euros(totalAvecPort)} HT</strong>
           </div>
           <button className="btn btn-primary" disabled={toutRetire || manque > 0} onClick={valider}>
             <Check size={18} aria-hidden="true" /> Enregistrer les modifications

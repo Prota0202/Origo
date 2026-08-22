@@ -8,7 +8,7 @@ export function ClientForm({ client, produits, onSave, onClose }) {
   const [f, setF] = useState(
     client
       ? { ...client, paliers: client.paliers ?? {} }
-      : { nom: '', ville: '', code: '', motDePasse: '', email: '', minCartons: 5, produits: [], prix: {}, paliers: {} }
+      : { nom: '', ville: '', adresse: '', telephone: '', numeroTva: '', code: '', motDePasse: '', email: '', minCartons: 5, modePaiement: 'sepa', produits: [], prix: {}, paliers: {} }
   )
   const maj = (champ) => (e) => setF({ ...f, [champ]: e.target.value })
 
@@ -102,6 +102,20 @@ export function ClientForm({ client, produits, onSave, onClose }) {
               <input type="text" value={f.ville} onChange={maj('ville')} />
             </label>
           </div>
+          <label className="champ">
+            <span>Adresse de livraison</span>
+            <input type="text" value={f.adresse ?? ''} onChange={maj('adresse')} placeholder="Rue, n°, code postal" required />
+          </label>
+          <div className="champ-row">
+            <label className="champ">
+              <span>Téléphone</span>
+              <input type="tel" value={f.telephone ?? ''} onChange={maj('telephone')} required />
+            </label>
+            <label className="champ">
+              <span>N° TVA (si connu)</span>
+              <input type="text" value={f.numeroTva ?? ''} onChange={maj('numeroTva')} placeholder="BE0…" />
+            </label>
+          </div>
           <div className="champ-row">
             <label className="champ">
               <span>Code client</span>
@@ -110,21 +124,29 @@ export function ClientForm({ client, produits, onSave, onClose }) {
             <label className="champ">
               <span>Mot de passe{client ? ' (laisser vide = inchangé)' : ''}</span>
               <input
-                type="text"
+                type="password"
                 value={f.motDePasse ?? ''}
                 onChange={maj('motDePasse')}
                 required={!client}
+                autoComplete={client ? 'new-password' : 'new-password'}
               />
             </label>
           </div>
           <div className="champ-row">
             <label className="champ">
               <span>E-mail</span>
-              <input type="email" value={f.email} onChange={maj('email')} />
+              <input type="email" value={f.email} onChange={maj('email')} placeholder="utile pour le mandat SEPA" />
             </label>
             <label className="champ">
               <span>Min. cartons / livraison</span>
               <input type="number" inputMode="numeric" min="1" value={f.minCartons} onChange={maj('minCartons')} required />
+            </label>
+            <label className="champ">
+              <span>Paiement</span>
+              <select value={f.modePaiement ?? 'sepa'} onChange={maj('modePaiement')}>
+                <option value="sepa">SEPA (prélèvement 15 et fin de mois)</option>
+                <option value="stripe">Carte (Stripe) à la commande</option>
+              </select>
             </label>
           </div>
 
@@ -240,7 +262,11 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
           nom: c.nom,
           ville: c.ville,
           email: c.email,
+          telephone: c.telephone,
+          adresse: c.adresse,
+          numeroTva: c.numeroTva,
           minCartons: c.minCartons,
+          modePaiement: c.modePaiement ?? 'sepa',
           productIds: c.produits,
         })
       } else {
@@ -248,7 +274,11 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
           nom: c.nom,
           ville: c.ville,
           email: c.email,
+          telephone: c.telephone,
+          adresse: c.adresse,
+          numeroTva: c.numeroTva,
           minCartons: c.minCartons,
+          modePaiement: c.modePaiement ?? 'sepa',
           ...(c.motDePasse ? { motDePasse: c.motDePasse } : {}),
         })
       }
@@ -297,7 +327,13 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
               )}
             </p>
             <p className="ligne-detail">
-              {c.ville} · code {c.code} · {c.produits.length} produits · min. {c.minCartons} cartons
+              {[c.ville, c.adresse, c.telephone, `code ${c.code}`].filter(Boolean).join(' · ')}
+              {` · ${c.produits.length} produits · min. ${c.minCartons} cartons`}
+              {(c.modePaiement ?? 'sepa') === 'stripe'
+                ? ' · carte'
+                : c.sepaMandatOk
+                  ? ` · SEPA ••••${c.sepaIbanLast4 || 'iban'}`
+                  : ' · SEPA sans mandat'}
               {Object.keys(c.prix ?? {}).length > 0 && ` · ${Object.keys(c.prix).length} prix négocié(s)`}
               {Object.keys(c.paliers ?? {}).length > 0 && ` · ${Object.keys(c.paliers).length} palier(s) de prix`}
             </p>

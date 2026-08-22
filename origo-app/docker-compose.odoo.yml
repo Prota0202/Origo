@@ -1,0 +1,110 @@
+# Surcouche Odoo pour la production — s'ajoute à docker-compose.prod.yml.
+#
+#   docker compose --env-file .env.prod \
+#     -f docker-compose.prod.yml -f docker-compose.odoo.yml up -d --build
+#
+# Volontairement séparé : ORIGO doit rester déployable seul, sans Odoo. C'est ce
+# qui permet de mettre l'application en service avant que l'intégration soit
+# terminée, ORIGO restant la source de vérité (voir ODOO.md § 8).
+#
+# Postgres dédié plutôt que partagé avec ORIGO :
+#   - restaurer ORIGO ne doit pas pouvoir toucher aux écritures comptables
+#   - Odoo réclame un rôle avec CREATEDB, qu'on ne veut pas sur la base ORIGO
+#   - les deux bases se sauvegardent et se restaurent indépendamment
+#
+# Première mise en service : la base n'existe pas encore et le gestionnaire de
+# bases est désactivé (voir odoo/odoo.conf). Voir DEPLOY.md pour la commande
+# d'initialisation.
+
+name: origo-prod
+
+services:
+  odoo-db:
+    image: postgres:16-alpine
+    container_name: origo-prod-odoo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ODOO_PG_USER:-odoo}
+      POSTGRES_PASSWORD: ${ODOO_PG_PASSWORD:?ODOO_PG_PASSWORD manquant}
+      # Odoo crée sa propre base : le rôle doit pouvoir se connecter à `postgres`.
+      POSTGRES_DB: postgres
+    volumes:
+      - odoo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  odoo:
+    build:
+      context: ./odoo
+      dockerfile: Dockerfile
+    container_name: origo-prod-odoo
+    restart: unless-stopped
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      # Variables lues par l'entrypoint de l'image officielle.
+      HOST: odoo-db
+      USER: ${ODOO_PG_USER:-odoo}
+      PASSWORD: ${ODOO_PG_PASSWORD}
+    volumes:
+      # Le filestore : pièces jointes, PDF de factures, images de produits.
+      # Il n'est PAS dans Postgres — un dump de base seul donne une comptabilité
+      # dont tous les documents ont disparu.
+      - odoo_filestore:/var/lib/odoo
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8069/web/health',
+          timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Caddy sert Odoo sur son sous-domaine. Le fichier n'existe dans le conteneur
+  # que via cette surcouche : sans elle, le glob `import` ne trouve rien et la
+  # configuration reste valide (vérifié avec `caddy validate`).
+  web:
+    depends_on:
+      - api
+      - odoo
+    environment:
+      ODOO_SITE_ADDRESS: ${ODOO_SITE_ADDRESS:?ODOO_SITE_ADDRESS manquant (ex. odoo.ton-domaine.be)}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./odoo/odoo.caddy:/etc/caddy/conf.d/odoo.caddy:ro
+
+  odoo-backup:
+    image: postgres:16-alpine
+    container_name: origo-prod-odoo-backup
+    restart: unless-stopped
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      PGHOST: odoo-db
+      POSTGRES_USER: ${ODOO_PG_USER:-odoo}
+      POSTGRES_DB: ${ODOO_DB:-origo}
+      PGPASSWORD: ${ODOO_PG_PASSWORD}
+      BACKUP_PREFIX: odoo
+      # Sans le filestore, restaurer la base rend une comptabilité sans documents.
+      BACKUP_FILESTORE_DIR: /filestore
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./scripts/pg-backup-loop.sh:/pg-backup-loop.sh:ro
+      - ./backups:/backups
+      - odoo_filestore:/filestore:ro
+    entrypoint: ['/bin/sh', '/pg-backup-loop.sh']
+
+volumes:
+  odoo_pg:
+  odoo_filestore:

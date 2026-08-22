@@ -99,12 +99,13 @@ export default function RetourCommande({ commande, onValider, onClose }) {
           ))}
 
           <label className="champ" style={{ marginTop: 8 }}>
-            <span>Motif (optionnel)</span>
+            <span>Motif</span>
             <input
               type="text"
               value={motif}
               onChange={(e) => setMotif(e.target.value)}
               placeholder="ex. produit périmé, cassé pendant le transport…"
+              required
             />
           </label>
         </div>
@@ -114,7 +115,7 @@ export default function RetourCommande({ commande, onValider, onClose }) {
             <span>{cartonsRetour} {cartonsRetour > 1 ? 'cartons retournés' : 'carton retourné'}</span>
             <strong>−{euros(totalRetour)} HT</strong>
           </div>
-          <button className="btn btn-primary" disabled={rienSelectionne} onClick={valider}>
+          <button className="btn btn-primary" disabled={rienSelectionne || !motif.trim()} onClick={valider}>
             <Undo2 size={18} aria-hidden="true" /> Enregistrer le retour
           </button>
         </div>

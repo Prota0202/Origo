@@ -27,3 +27,16 @@ dev-dist/
 .claude/
 .DS_Store
 
+# Secrets et données de production
+.env.prod
+.env.prod.local
+.env.production
+!.env.prod.example
+.env.odoo.local
+backups/
+
+# Code Odoo Enterprise : licence propriétaire, ne doit jamais entrer dans le dépôt.
+# Le dossier reste versionné (vide) pour que le Dockerfile puisse le copier.
+odoo/enterprise/*
+!odoo/enterprise/.gitkeep
+

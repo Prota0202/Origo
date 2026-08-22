@@ -3,6 +3,34 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
+/**
+ * Ce seed EFFACE tout (deleteMany en cascade). Lancé par erreur sur le serveur
+ * — via SEED_ON_START ou une commande à la main — il détruit les commandes réelles.
+ * En production il faut donc un opt-in explicite et conscient.
+ * Pour créer seulement le compte direction en prod : `npm run db:bootstrap-admin`.
+ */
+const isProd = process.env.NODE_ENV === 'production'
+if (isProd && process.env.SEED_FORCE_DESTRUCTIVE !== '1') {
+  console.error(
+    'Refus : ce seed supprime TOUTES les données (commandes, clients, produits).\n' +
+      'En production, utilise `npm run db:bootstrap-admin`.\n' +
+      'Si tu veux vraiment tout effacer : SEED_FORCE_DESTRUCTIVE=1',
+  )
+  process.exit(1)
+}
+
+/** Mots de passe démo tolérés en dev seulement ; en prod il faut des vrais. */
+function motDePasseSeed(variable: string, defautDemo: string): string {
+  const v = process.env[variable]
+  if (!isProd) return v ?? defautDemo
+  if (!v || v.length < 12 || v === defautDemo) {
+    throw new Error(
+      `${variable} doit être défini (≥ 12 caractères, différent du mot de passe de démo) en production`,
+    )
+  }
+  return v
+}
+
 const PRODUITS = [
   {
     sku: 'bol-kraft-750',
@@ -118,9 +146,24 @@ async function main() {
   await prisma.sequence.deleteMany()
 
   const staff = [
-    { code: 'ORIGO', nom: 'Direction', role: 'DIRECTION' as const, mdp: 'admin2026' },
-    { code: 'PREPA', nom: 'Préparation', role: 'PREPARATION' as const, mdp: 'prepa2026' },
-    { code: 'LIVREUR', nom: 'Livreur', role: 'LIVREUR' as const, mdp: 'livreur2026' },
+    {
+      code: 'ORIGO',
+      nom: 'Direction',
+      role: 'DIRECTION' as const,
+      mdp: motDePasseSeed('SEED_ADMIN_PASSWORD', 'admin2026'),
+    },
+    {
+      code: 'PREPA',
+      nom: 'Préparation',
+      role: 'PREPARATION' as const,
+      mdp: motDePasseSeed('SEED_PREPA_PASSWORD', 'prepa2026'),
+    },
+    {
+      code: 'LIVREUR',
+      nom: 'Livreur',
+      role: 'LIVREUR' as const,
+      mdp: motDePasseSeed('SEED_LIVREUR_PASSWORD', 'livreur2026'),
+    },
   ]
 
   for (const s of staff) {
@@ -149,16 +192,20 @@ async function main() {
       code: 'BOMBAY',
       nom: 'Le Bombay',
       ville: 'Bruxelles',
+      adresse: 'Rue Antoine Dansaert 12, 1000 Bruxelles',
+      telephone: '+32 2 512 00 01',
       email: 'contact@lebombay.be',
-      mdp: '1234',
+      mdp: motDePasseSeed('SEED_CLIENT_PASSWORD', '1234'),
       skus: ['bol-kraft-750', 'couvercle-bol-750', 'sac-kraft', 'serviettes-ouate', 'papier-toilette'],
     },
     {
       code: 'MARCO',
       nom: 'Chez Marco',
       ville: 'Liège',
+      adresse: 'Rue du Pont 8, 4000 Liège',
+      telephone: '+32 4 221 00 02',
       email: 'commande@chezmarco.be',
-      mdp: '1234',
+      mdp: motDePasseSeed('SEED_CLIENT_PASSWORD', '1234'),
       skus: ['gobelet-25', 'barquette-alu', 'film-etirable', 'bobine-essuyage', 'gants-nitrile'],
     },
   ]
@@ -173,6 +220,8 @@ async function main() {
         code: c.code,
         nom: c.nom,
         ville: c.ville,
+        adresse: c.adresse,
+        telephone: c.telephone,
         email: c.email,
         minCartons: 5,
         motDePasseHash: await bcrypt.hash(c.mdp, 10),
@@ -181,6 +230,27 @@ async function main() {
     })
     console.log(`  client ${c.code} / ${c.mdp}`)
   }
+
+  await prisma.societe.upsert({
+    where: { id: 'origo' },
+    create: {
+      id: 'origo',
+      nom: 'ORIGO',
+      adresse: 'Avenue des Anciens Combattants 23, 1140 Evere',
+      email: 'pro@origo.be',
+      telephone: '+32 468 08 96 03',
+      numeroTva: '',
+      horaires: 'Lun – Ven · 8h00 – 18h00',
+    },
+    update: {
+      nom: 'ORIGO',
+      adresse: 'Avenue des Anciens Combattants 23, 1140 Evere',
+      email: 'pro@origo.be',
+      telephone: '+32 468 08 96 03',
+      numeroTva: '',
+      horaires: 'Lun – Ven · 8h00 – 18h00',
+    },
+  })
 
   await prisma.sequence.create({ data: { nom: 'order', valeur: 0 } })
   console.log('Seed OK')

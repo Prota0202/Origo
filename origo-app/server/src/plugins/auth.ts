@@ -9,6 +9,7 @@ export type JwtStaff = {
   role: 'DIRECTION' | 'PREPARATION' | 'LIVREUR'
   code: string
   nom: string
+  mdpAChanger?: boolean
 }
 
 export type JwtClient = {
@@ -16,6 +17,7 @@ export type JwtClient = {
   sub: string
   code: string
   nom: string
+  mdpAChanger?: boolean
 }
 
 export type JwtUser = JwtStaff | JwtClient
@@ -27,8 +29,14 @@ declare module '@fastify/jwt' {
   }
 }
 
+const ROUTES_MDP_A_CHANGER = new Set(['/api/v1/me/mot-de-passe', '/api/v1/auth/me'])
+
 export async function registerAuth(app: FastifyInstance) {
   await app.register(fjwt, { secret: env.jwtSecret })
+}
+
+export function signerSession(app: FastifyInstance, payload: JwtUser) {
+  return app.jwt.sign(payload, { expiresIn: env.jwtExpiresIn })
 }
 
 export async function authenticate(req: FastifyRequest, _reply: FastifyReply) {
@@ -37,6 +45,11 @@ export async function authenticate(req: FastifyRequest, _reply: FastifyReply) {
   } catch {
     throw new UnauthorizedError()
   }
+
+  if (!req.user.mdpAChanger) return
+  const chemin = req.url.split('?')[0]
+  if (ROUTES_MDP_A_CHANGER.has(chemin)) return
+  throw new ForbiddenError('Changez votre mot de passe avant de continuer', 'MDP_A_CHANGER')
 }
 
 export function requireStaff(...roles: JwtStaff['role'][]) {
