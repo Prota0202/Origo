@@ -3,7 +3,6 @@ import { euros } from './data.js'
 import { getCompany, getTvaRate } from './company.jsx'
 import { htDocument, libelleDocument, lignesDuDocument, portDocument } from './document-montant.js'
 import { TEXTE_PAIEMENT_SEPA } from './frais-livraison.js'
-import { getToken } from './api/http.js'
 
 export { htDocument, lignesDuDocument } from './document-montant.js'
 
@@ -237,11 +236,9 @@ export async function telechargerPDF(type, commande) {
 export async function telechargerDocument(type, commande) {
   if (commande.id) {
     try {
-      const token = getToken()
-      const headers = { Accept: 'application/pdf' }
-      if (token) headers.Authorization = `Bearer ${token}`
       const res = await fetch(`/api/v1/orders/${commande.id}/document?type=${encodeURIComponent(type)}`, {
-        headers,
+        headers: { Accept: 'application/pdf' },
+        credentials: 'include',
       })
       if (res.status === 200) {
         const blob = await res.blob()

@@ -176,7 +176,7 @@ describe.skipIf(!labo)('poussée réelle vers Odoo', () => {
     const { synchroniserCommande } = await import('../src/lib/odoo/ventes.js')
     const { creerCommande } = await import('../src/modules/orders/service.js')
     const odoo = await import('../src/lib/odoo/rpc.js')
-    const { product, client } = await creerJeuDeDonnees({ stock: 8, prixCarton: 12, minCartons: 1 })
+    const { product, client } = await creerJeuDeDonnees({ stock: 8, prixCarton: 80, minCartons: 1 })
 
     await synchroniserProduit(product.id)
     await synchroniserClient(client.id)
@@ -196,7 +196,7 @@ describe.skipIf(!labo)('poussée réelle vers Odoo', () => {
     const [devis] = await odoo.lire('sale.order', [row.odooId!], ['client_order_ref', 'state', 'amount_untaxed'])
     expect(devis.client_order_ref).toBe(commande.numero)
     expect(devis.state).toBe('sale')
-    expect(Number(devis.amount_untaxed)).toBe(34)
+    expect(Number(devis.amount_untaxed)).toBe(160)
 
     await odoo.executerKw('sale.order', 'action_cancel', [[row.odooId]])
     const p = await prisma.product.findUniqueOrThrow({ where: { id: product.id } })

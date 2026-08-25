@@ -175,7 +175,7 @@ async function main() {
         motDePasseHash: await bcrypt.hash(s.mdp, 10),
       },
     })
-    console.log(`  staff ${s.code} / ${s.mdp}`)
+    console.log(`  staff ${s.code} créé`)
   }
 
   const products = []
@@ -228,7 +228,7 @@ async function main() {
         catalogue: { create: catalogue },
       },
     })
-    console.log(`  client ${c.code} / ${c.mdp}`)
+    console.log(`  client ${c.code} créé`)
   }
 
   await prisma.societe.upsert({

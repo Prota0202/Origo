@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { env } from '../../config/env.js'
+import { etatBackup } from '../../lib/backup.js'
 import { etatOdoo } from '../../lib/odoo/sonde.js'
 import { dernierSyncOdoo, synchroniserTout } from '../../lib/odoo/sync.js'
 import { statsVentesOdoo } from '../../lib/odoo/ventes.js'
@@ -11,6 +12,7 @@ export async function odooRoutes(app: FastifyInstance) {
   app.get('/api/v1/odoo', { preHandler: requireStaff('DIRECTION') }, async () => ({
     actif: env.odoo.actif,
     sonde: etatOdoo(),
+    backup: etatBackup(),
     dernierSync: dernierSyncOdoo(),
     commandes: await statsVentesOdoo(),
   }))

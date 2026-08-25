@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { X, Minus, Plus, Trash2, AlertCircle, CheckCircle2, Check } from 'lucide-react'
+import { X, Minus, Plus, Trash2, AlertCircle, Check } from 'lucide-react'
 import { euros } from '../data.js'
 import { fraisLivraisonHT } from '../frais-livraison.js'
+import Overlay from './Overlay.jsx'
 
 // Modale partagée (client + admin) pour ajuster les quantités d'une commande
 // déjà validée. Le prix unitaire par ligne reste celui déjà appliqué à la
 // commande d'origine — on ne recalcule pas les paliers de remise ici, on
 // ajuste seulement les quantités et donc les totaux.
-export default function ModifierCommande({ commande, produits, minCartons, onValider, onClose }) {
+export default function ModifierCommande({ commande, produits, onValider, onClose }) {
   const [quantites, setQuantites] = useState(() =>
     Object.fromEntries(commande.lignes.map((l) => [l.id, l.qty]))
   )
@@ -28,11 +29,10 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
   const totalPrix = lignesFinales.reduce((s, l) => s + quantites[l.id] * l.prixCarton, 0)
   const frais = fraisLivraisonHT(totalPrix)
   const totalAvecPort = Math.round((totalPrix + frais) * 100) / 100
-  const manque = minCartons ? minCartons - totalCartons : 0
   const toutRetire = totalCartons === 0
 
   const valider = () => {
-    if (toutRetire || manque > 0) return
+    if (toutRetire) return
     onValider(
       lignesFinales.map((l) => ({ id: l.id, nom: l.nom, prixCarton: l.prixCarton, qty: quantites[l.id], livree: null })),
       totalPrix,
@@ -42,7 +42,7 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-modifier-commande">
         <div className="sheet-header">
           <h2 id="titre-modifier-commande" className="sheet-title">Modifier {commande.numero}</h2>
@@ -93,22 +93,10 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
         </div>
 
         <div className="sheet-footer">
-          {toutRetire ? (
+          {toutRetire && (
             <div className="alerte-min" role="alert">
               <AlertCircle size={18} aria-hidden="true" />
               <span>Impossible de tout retirer ici — utilisez « Annuler la commande » à la place.</span>
-            </div>
-          ) : manque > 0 ? (
-            <div className="alerte-min" role="alert">
-              <AlertCircle size={18} aria-hidden="true" />
-              <span>
-                Il faut au moins {minCartons} cartons ({manque} de plus) pour garder cette commande active.
-              </span>
-            </div>
-          ) : (
-            <div className="ok-min">
-              <CheckCircle2 size={18} aria-hidden="true" />
-              <span>Commande valide</span>
             </div>
           )}
           <div className="total-row">
@@ -116,14 +104,14 @@ export default function ModifierCommande({ commande, produits, minCartons, onVal
             <span>{euros(totalPrix)} HT</span>
           </div>
           <div className="total-row">
-            <span>{frais === 0 ? 'Livraison (franco dès 150 € HT)' : 'Frais de livraison'}</span>
+            <span>{frais === 0 ? 'Livraison' : 'Frais de livraison'}</span>
             <span>{frais === 0 ? 'offerts' : euros(frais)}</span>
           </div>
           <div className="total-row">
             <span>Total</span>
             <strong>{euros(totalAvecPort)} HT</strong>
           </div>
-          <button className="btn btn-primary" disabled={toutRetire || manque > 0} onClick={valider}>
+          <button className="btn btn-primary" disabled={toutRetire} onClick={valider}>
             <Check size={18} aria-hidden="true" /> Enregistrer les modifications
           </button>
         </div>

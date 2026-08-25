@@ -7,6 +7,7 @@ import { mapClient } from '../../lib/mappers.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { requireStaff } from '../../plugins/auth.js'
 import { apresMutationClient } from '../../lib/odoo/sync.js'
+import { incrementerSession, oublierSession } from '../../lib/session.js'
 
 const clientInclude = {
   catalogue: true,
@@ -123,6 +124,11 @@ export async function clientRoutes(app: FastifyInstance) {
       },
       include: clientInclude,
     })
+    if (d.motDePasse || d.actif === false) {
+      await incrementerSession('client', id)
+    } else {
+      oublierSession('client', id)
+    }
     apresMutationClient(c.id)
     return mapClient(c)
   })

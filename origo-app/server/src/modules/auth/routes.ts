@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma.js'
-import { verifierMotDePasse } from '../../lib/password.js'
+import { hashLeurre, verifierMotDePasse } from '../../lib/password.js'
 import { UnauthorizedError, ValidationError } from '../../lib/errors.js'
 import { ROLE_UI, mapClient } from '../../lib/mappers.js'
-import { authenticate, signerSession } from '../../plugins/auth.js'
+import { authenticate, poserCookieSession, retirerCookieSession, signerSession } from '../../plugins/auth.js'
 import type { JwtClient, JwtStaff } from '../../plugins/auth.js'
 import { ecrireSociete, lireSociete } from '../../lib/societe.js'
 import { requireStaff } from '../../plugins/auth.js'
@@ -19,33 +19,55 @@ export async function authRoutes(app: FastifyInstance) {
     '/api/v1/auth/login',
     {
       config: {
-        // Anti brute-force : 20 essais / IP / 15 min (suffisant pour un resto, pas pour un bot)
-        rateLimit: { max: 20, timeWindow: '15 minutes' },
+        // Par code resto, pas par IP : 40 téléphones derrière un NAT d’hôtel
+        // ne doivent pas se bloquer entre eux. Un bot vise un code, pas une IP.
+        rateLimit: {
+          max: 12,
+          timeWindow: '15 minutes',
+          hook: 'preValidation',
+          keyGenerator: (req) => {
+            const code =
+              req.body && typeof req.body === 'object' && 'code' in req.body
+                ? String((req.body as { code?: unknown }).code ?? '')
+                    .trim()
+                    .toUpperCase()
+                : ''
+            return `login:${code || 'inconnu'}`
+          },
+        },
       },
     },
-    async (req) => {
+    async (req, reply) => {
     const parsed = loginSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError('Code et mot de passe requis')
 
     const code = parsed.data.code.trim().toUpperCase()
     const { motDePasse } = parsed.data
 
-    const staff = await prisma.staff.findUnique({ where: { code } })
-    if (staff?.actif) {
-      const ok = await verifierMotDePasse(motDePasse, staff.motDePasseHash)
-      if (!ok) throw new UnauthorizedError('Code ou mot de passe incorrect')
+    // Les deux lookups partent ensemble, puis un seul bcrypt.compare (hash réel ou leurre)
+    // pour qu’un code inexistant ne réponde pas plus vite qu’un mauvais mot de passe.
+    const [staff, client] = await Promise.all([
+      prisma.staff.findUnique({ where: { code } }),
+      prisma.client.findUnique({ where: { code } }),
+    ])
 
+    const compte = staff?.actif ? staff : client?.actif ? client : null
+    const ok = await verifierMotDePasse(motDePasse, compte?.motDePasseHash ?? hashLeurre())
+    if (!ok || !compte) throw new UnauthorizedError('Code ou mot de passe incorrect')
+
+    if (staff?.actif && compte === staff) {
       const payload: JwtStaff = {
         typ: 'staff',
         sub: staff.id,
         role: staff.role,
         code: staff.code,
         nom: staff.nom,
+        sv: staff.sessionVersion,
         mdpAChanger: staff.mdpAChanger,
       }
       const token = signerSession(app, payload)
+      poserCookieSession(reply, token)
       return {
-        token,
         user: {
           type: 'staff',
           id: staff.id,
@@ -57,8 +79,10 @@ export async function authRoutes(app: FastifyInstance) {
       }
     }
 
-    const client = await prisma.client.findUnique({
-      where: { code },
+    if (!client?.actif) throw new UnauthorizedError('Code ou mot de passe incorrect')
+
+    const complet = await prisma.client.findUniqueOrThrow({
+      where: { id: client.id },
       include: {
         catalogue: true,
         favoris: true,
@@ -66,31 +90,30 @@ export async function authRoutes(app: FastifyInstance) {
         paliers: true,
       },
     })
-    if (!client?.actif) {
-      throw new UnauthorizedError('Code ou mot de passe incorrect')
-    }
-
-    const ok = await verifierMotDePasse(motDePasse, client.motDePasseHash)
-    if (!ok) throw new UnauthorizedError('Code ou mot de passe incorrect')
-
     const payload: JwtClient = {
       typ: 'client',
       sub: client.id,
       code: client.code,
       nom: client.nom,
+      sv: client.sessionVersion,
       mdpAChanger: client.mdpAChanger,
     }
     const token = signerSession(app, payload)
+    poserCookieSession(reply, token)
     return {
-      token,
       user: {
         type: 'client',
-        ...mapClient(client),
+        ...mapClient(complet),
         mdpAChanger: client.mdpAChanger,
       },
     }
     },
   )
+
+  app.post('/api/v1/auth/logout', async (_req, reply) => {
+    retirerCookieSession(reply)
+    return { ok: true }
+  })
 
   app.get('/api/v1/auth/me', { preHandler: authenticate }, async (req) => {
     const user = req.user

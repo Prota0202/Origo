@@ -49,7 +49,14 @@ async function main() {
   const motDePasseHash = await bcrypt.hash(motDePasse, 12)
   const staff = await prisma.staff.upsert({
     where: { code },
-    update: { motDePasseHash, actif: true, nom, role: 'DIRECTION', mdpAChanger: false },
+    update: {
+      motDePasseHash,
+      actif: true,
+      nom,
+      role: 'DIRECTION',
+      mdpAChanger: false,
+      sessionVersion: { increment: 1 },
+    },
     create: { code, nom, role: 'DIRECTION', motDePasseHash, mdpAChanger: false },
   })
 

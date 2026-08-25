@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, UserX, X } from 'lucide-react'
 import { StaffApi } from '../../api/index.js'
+import { useCompany } from '../../company.jsx'
+import Overlay from '../Overlay.jsx'
 
 const ROLES = [
   { id: 'direction', label: 'Direction' },
@@ -13,6 +15,7 @@ function libelleRole(role) {
 }
 
 function FormStaff({ compte, onSave, onClose }) {
+  const { mdpMinCaracteres: mdpMin = 12 } = useCompany()
   const [f, setF] = useState(
     compte
       ? { nom: compte.nom, code: compte.code, role: compte.role, motDePasse: '' }
@@ -22,7 +25,7 @@ function FormStaff({ compte, onSave, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <form
         className="sheet"
         onSubmit={(e) => {
@@ -61,13 +64,13 @@ function FormStaff({ compte, onSave, onClose }) {
             </select>
           </label>
           <label className="champ">
-            <span>Mot de passe{compte ? ' (laisser vide = inchangé)' : ''}</span>
+            <span>Mot de passe{compte ? ' (laisser vide = inchangé)' : ` (${mdpMin} caractères minimum)`}</span>
             <input
               type="password"
               value={f.motDePasse}
               onChange={maj('motDePasse')}
               required={!compte}
-              minLength={compte ? undefined : 8}
+              minLength={f.motDePasse ? mdpMin : undefined}
               autoComplete="new-password"
             />
           </label>

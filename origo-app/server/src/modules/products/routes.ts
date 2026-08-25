@@ -47,6 +47,7 @@ export async function productRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const p = await prisma.product.findUnique({ where: { id } })
     if (!p) throw new NotFoundError('Produit introuvable')
+    if (req.user.typ === 'client' && !p.actif) throw new NotFoundError('Produit introuvable')
     return mapProduct(p)
   })
 

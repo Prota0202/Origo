@@ -10,10 +10,19 @@ export function fraisLivraisonHT(sousTotalArticlesHT) {
 export const TEXTE_PAIEMENT_SEPA =
   'Prélèvement SEPA le 15 et le dernier jour du mois, sur les commandes livrées non encore payées.'
 
+const ANCIENNE_LIGNE_MIN =
+  'Minimum de commande 150 € HT. Franco de port à partir de ce montant. En dessous (correction ORIGO) : 10 € HT.'
+const LIGNE_LIVRAISON =
+  'Franco de port dès 150 € HT. En dessous : 10 € HT de livraison.'
+
+export function normaliserCgv(texte) {
+  return (texte || '').replaceAll(ANCIENNE_LIGNE_MIN, LIGNE_LIVRAISON)
+}
+
 export const CGV_DEFAUT = `Conditions de commande ORIGO (B2B)
 
 1. Commande — La validation dans l'application, avec acceptation de ces conditions, vaut bon de commande signé.
-2. Livraison — Franco de port à partir de 150 € HT. En dessous : 10 € HT de frais de livraison.
+2. Livraison — ${LIGNE_LIVRAISON}
 3. Paiement — Prélèvement SEPA le 15 et le dernier jour du mois (commandes livrées), sauf paiement carte convenu. Un mandat IBAN est signé dans l’application.
 4. Réclamations — À formuler à la livraison. Les retours suivent la procédure ORIGO.
 5. Facture — La facture électronique Peppol sera émise dès attribution du n° TVA ORIGO.

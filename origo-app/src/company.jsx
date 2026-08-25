@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { AuthApi } from './api/index.js'
-import { CGV_DEFAUT, TEXTE_PAIEMENT_SEPA } from './frais-livraison.js'
+import { CGV_DEFAUT, TEXTE_PAIEMENT_SEPA, normaliserCgv } from './frais-livraison.js'
 
 const defaults = {
   name: 'ORIGO',
@@ -18,6 +18,7 @@ const defaults = {
   seuilFrancoHT: 150,
   fraisLivraisonHT: 10,
   paiementStripeActif: false,
+  mdpMinCaracteres: 12,
 }
 
 const CompanyContext = createContext(defaults)
@@ -39,11 +40,12 @@ export function CompanyProvider({ children }) {
           tvaRate: Number(c.tvaRate ?? 0.21),
           delaiModificationMs: Number(c.delaiModificationMs ?? defaults.delaiModificationMs),
           horaires: c.horaires ?? defaults.horaires,
-          conditionsGenerales: c.conditionsGenerales || CGV_DEFAUT,
+          conditionsGenerales: normaliserCgv(c.conditionsGenerales || CGV_DEFAUT),
           textePaiementSepa: c.textePaiementSepa ?? defaults.textePaiementSepa,
           seuilFrancoHT: Number(c.seuilFrancoHT ?? 150),
           fraisLivraisonHT: Number(c.fraisLivraisonHT ?? 10),
           paiementStripeActif: Boolean(c.paiementStripeActif),
+          mdpMinCaracteres: Number(c.mdpMinCaracteres ?? 12),
         }
         setCompany(next)
         setCompanySnapshot(next)

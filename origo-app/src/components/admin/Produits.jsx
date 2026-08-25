@@ -4,6 +4,7 @@ import { euros } from '../../data.js'
 import { ProductsApi } from '../../api/index.js'
 import { chargerImagePourRecadrage } from '../../image.js'
 import AjusterPhoto from '../AjusterPhoto.jsx'
+import Overlay from '../Overlay.jsx'
 import { slug } from './utils.js'
 
 export function ProduitForm({ produit, categories, onSave, onClose }) {
@@ -60,7 +61,7 @@ export function ProduitForm({ produit, categories, onSave, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <form className="sheet" onSubmit={enregistrer} role="dialog" aria-modal="true" aria-labelledby="titre-produit-form">
         <div className="sheet-header">
           <h2 id="titre-produit-form" className="sheet-title">

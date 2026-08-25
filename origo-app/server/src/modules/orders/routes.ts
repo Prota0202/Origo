@@ -87,7 +87,7 @@ export async function orderRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const order = await prisma.order.findUnique({ where: { id }, select: { clientId: true } })
     if (!order) throw new NotFoundError('Commande introuvable')
-    if (order.clientId !== req.user.sub) throw new ForbiddenError()
+    if (order.clientId !== req.user.sub) throw new NotFoundError('Commande introuvable')
     return confirmerPaiementStripe(id)
   })
 
@@ -100,7 +100,7 @@ export async function orderRoutes(app: FastifyInstance) {
     })
     if (!order) throw new NotFoundError('Commande introuvable')
     const user = req.user
-    if (user.typ === 'client' && user.sub !== order.clientId) throw new ForbiddenError()
+    if (user.typ === 'client' && user.sub !== order.clientId) throw new NotFoundError('Commande introuvable')
     if (user.typ === 'staff' && !['DIRECTION', 'PREPARATION', 'LIVREUR'].includes(user.role)) {
       throw new ForbiddenError()
     }

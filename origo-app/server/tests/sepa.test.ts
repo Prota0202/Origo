@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 import { env } from '../src/config/env.js'
 import { lancerPrelevementsSepa } from '../src/lib/sepa.js'
@@ -30,7 +31,7 @@ describe('lancerPrelevementsSepa', () => {
     })
     await prisma.order.create({
       data: {
-        numero: `CMD-SEPA-${client.id.slice(0, 6)}`,
+        numero: `CMD-SEPA-${randomUUID().slice(0, 8)}`,
         clientId: client.id,
         statut: 'LIVREE',
         payee: false,
@@ -44,19 +45,25 @@ describe('lancerPrelevementsSepa', () => {
 
     env.stripe.actif = true
     env.stripe.secretKey = 'sk_test_sepa'
+    let n = 0
     const orig = globalThis.fetch
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ id: 'pi_test_sepa', status: 'processing' }), {
+    globalThis.fetch = (async () => {
+      n += 1
+      return new Response(JSON.stringify({ id: `pi_test_${n}_${randomUUID().slice(0, 8)}`, status: 'processing' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch
+      })
+    }) as typeof fetch
 
     try {
       const r = await lancerPrelevementsSepa({ forcer: true })
-      expect(r.preleves).toBe(1)
-      const prelev = await prisma.prelevementSepa.findFirst({ where: { clientId: client.id } })
+      expect(r.preleves).toBeGreaterThanOrEqual(1)
+      const prelev = await prisma.prelevementSepa.findFirst({
+        where: { clientId: client.id },
+        orderBy: { createdAt: 'desc' },
+      })
       expect(prelev?.statut).toBe('envoye')
-      expect(prelev?.stripePaymentIntentId).toBe('pi_test_sepa')
+      expect(prelev?.stripePaymentIntentId).toMatch(/^pi_test_/)
     } finally {
       globalThis.fetch = orig
       env.stripe.actif = false

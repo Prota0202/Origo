@@ -5,6 +5,7 @@ export { getToken, setToken, clearSession }
 export const AuthApi = {
   login: (code, motDePasse) =>
     api('/api/v1/auth/login', { method: 'POST', body: { code, motDePasse }, auth: false }),
+  logout: () => api('/api/v1/auth/logout', { method: 'POST', auth: false }),
   me: () => api('/api/v1/auth/me'),
   company: () => api('/api/v1/company', { auth: false }),
   updateCompany: (data) => api('/api/v1/company', { method: 'PATCH', body: data }),

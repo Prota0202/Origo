@@ -6,6 +6,7 @@ import { assertMotDePasseAcceptable } from '../../lib/mot-de-passe.js'
 import { ROLE_UI } from '../../lib/mappers.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { requireStaff } from '../../plugins/auth.js'
+import { incrementerSession, oublierSession } from '../../lib/session.js'
 import type { RoleStaff } from '@prisma/client'
 
 const ROLE_API: Record<string, RoleStaff> = {
@@ -102,6 +103,11 @@ export async function staffRoutes(app: FastifyInstance) {
         }),
       },
     })
+    if (parsed.data.motDePasse || parsed.data.actif === false) {
+      await incrementerSession('staff', id)
+    } else {
+      oublierSession('staff', id)
+    }
     return mapStaff(s)
   })
 }

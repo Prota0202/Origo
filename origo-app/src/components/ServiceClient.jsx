@@ -1,4 +1,4 @@
-import { Phone, Mail, Clock, MessageCircle } from 'lucide-react'
+import { Phone, Mail, Clock } from 'lucide-react'
 import { useCompany } from '../company.jsx'
 import ChangerMotDePasse from './ChangerMotDePasse.jsx'
 
@@ -7,17 +7,7 @@ export default function ServiceClient() {
 
   return (
     <section aria-labelledby="titre-service">
-      <h1 id="titre-service" className="page-title">Service client</h1>
-      <p className="page-subtitle">Une question sur votre catalogue ou une livraison&nbsp;?</p>
-
-      <div className="contact-hero">
-        <MessageCircle size={32} aria-hidden="true" style={{ marginBottom: 8 }} />
-        <h2>Besoin d’aide&nbsp;?</h2>
-        <p>Notre équipe vous répond du lundi au vendredi.</p>
-        <a className="btn btn-appel" href={company.phoneLink}>
-          <Phone size={20} aria-hidden="true" /> Appeler ORIGO
-        </a>
-      </div>
+      <h1 id="titre-service" className="page-title">Aide</h1>
 
       <div className="card">
         <div className="contact-ligne">

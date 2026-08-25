@@ -69,7 +69,7 @@ export function valeursPartenaireOdoo(
     phone: c.telephone || false,
     street: c.adresse || false,
     city: c.ville || false,
-    comment: `ORIGO · code ${c.code} · minimum ${c.minCartons} cartons.`,
+    comment: `ORIGO · code ${c.code} · franco dès 150 € HT.`,
     active: c.actif,
   }
   if (paysId) valeurs.country_id = paysId

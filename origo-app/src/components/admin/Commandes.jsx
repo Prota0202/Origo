@@ -195,7 +195,7 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
           </div>
         ) : (
           <>
-            <p className="page-subtitle">Utilisez les actions ci-dessous pour faire avancer une commande · € pour marquer payée</p>
+            <p className="page-subtitle">€ = marquer payée</p>
             {toutes.map((cmd) => (
               <article key={cmd.clientId + cmd.numero} className="commande-card">
                 <div className="commande-top">
@@ -411,7 +411,6 @@ export function AdminCommandes({ admin, clients, produits, setProduits, commande
         <ModifierCommande
           commande={modifierCible}
           produits={produits}
-          minCartons={null}
           onValider={(lignes, total, cartons) => {
             modifierCommande(modifierCible, lignes, total, cartons)
             setModifierCible(null)

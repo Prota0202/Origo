@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { euros } from '../../data.js'
 import { getTvaRate } from '../../company.jsx'
-import { ClientsApi, OdooApi, AuthApi, SepaApi } from '../../api/index.js'
+import { ClientsApi, OdooApi, SepaApi } from '../../api/index.js'
 import { useCompany } from '../../company.jsx'
 import { JOUR } from './utils.js'
 
@@ -44,11 +44,16 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
   useEffect(() => {
     let ignore = false
     OdooApi.etat()
-      .then((etat) => { if (!ignore) setOdoo(etat) })
-      .catch(() => { if (!ignore) setOdoo(null) })
-    AuthApi.ready()
-      .then((etat) => { if (!ignore) setBackup(etat.backup ?? null) })
-      .catch(() => { if (!ignore) setBackup(null) })
+      .then((etat) => {
+        if (ignore) return
+        setOdoo(etat)
+        setBackup(etat.backup ?? null)
+      })
+      .catch(() => {
+        if (ignore) return
+        setOdoo(null)
+        setBackup(null)
+      })
     SepaApi.liste()
       .then((liste) => { if (!ignore) setPrelevements(liste) })
       .catch(() => { if (!ignore) setPrelevements([]) })

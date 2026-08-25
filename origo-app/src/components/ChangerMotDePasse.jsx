@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { AuthApi } from '../api/index.js'
+import { useCompany } from '../company.jsx'
 
 export default function ChangerMotDePasse({ obligatoire = false, onChange }) {
+  const { mdpMinCaracteres = 12 } = useCompany()
   const [actuel, setActuel] = useState('')
   const [nouveau, setNouveau] = useState('')
   const [msg, setMsg] = useState('')
@@ -18,7 +20,7 @@ export default function ChangerMotDePasse({ obligatoire = false, onChange }) {
       setActuel('')
       setNouveau('')
       setMsg('Mot de passe mis à jour.')
-      if (res?.token) onChange?.(res)
+      if (res?.user) onChange?.(res)
     } catch (err) {
       setErreur(err.message)
     } finally {
@@ -31,11 +33,6 @@ export default function ChangerMotDePasse({ obligatoire = false, onChange }) {
       <p className="ligne-nom">
         {obligatoire ? 'Mot de passe à changer' : 'Changer le mot de passe'}
       </p>
-      <p className="ligne-detail" style={{ marginBottom: 12 }}>
-        {obligatoire
-          ? 'Ce compte utilise encore un mot de passe de démo. Choisis-en un autre (12 caractères minimum en production) pour continuer.'
-          : '8 caractères minimum (12 en production).'}
-      </p>
       <label className="champ">
         <span>Mot de passe actuel</span>
         <input
@@ -47,11 +44,11 @@ export default function ChangerMotDePasse({ obligatoire = false, onChange }) {
         />
       </label>
       <label className="champ">
-        <span>Nouveau mot de passe</span>
+        <span>Nouveau mot de passe ({mdpMinCaracteres} caractères minimum)</span>
         <input
           type="password"
           autoComplete="new-password"
-          minLength={8}
+          minLength={mdpMinCaracteres}
           value={nouveau}
           onChange={(e) => setNouveau(e.target.value)}
           required

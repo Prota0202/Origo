@@ -24,7 +24,7 @@ export async function creerJeuDeDonnees(opts: { stock: number; prixCarton?: numb
       nom: `Produit ${suffixe}`,
       categorie: 'Test',
       unitesParCarton: 10,
-      prixCarton: opts.prixCarton ?? 10,
+      prixCarton: opts.prixCarton ?? 150,
       stock: opts.stock,
     },
   })
@@ -71,7 +71,7 @@ export async function ajouterProduitAuCatalogue(clientId: string, stock: number)
       nom: `Extra ${suffixe}`,
       categorie: 'Test',
       unitesParCarton: 10,
-      prixCarton: 10,
+      prixCarton: 150,
       stock,
     },
   })
@@ -82,7 +82,7 @@ export async function ajouterProduitAuCatalogue(clientId: string, stock: number)
 }
 
 export function tokenClient(app: FastifyInstance, client: { id: string; code: string; nom: string }) {
-  return app.jwt.sign({ typ: 'client', sub: client.id, code: client.code, nom: client.nom })
+  return app.jwt.sign({ typ: 'client', sub: client.id, code: client.code, nom: client.nom, sv: 0 })
 }
 
 export function tokenStaff(
@@ -95,6 +95,7 @@ export function tokenStaff(
     code: staff.code,
     nom: staff.nom,
     role: staff.role,
+    sv: 0,
   })
 }
 

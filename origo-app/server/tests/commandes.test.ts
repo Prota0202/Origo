@@ -169,7 +169,7 @@ describe('transitions de statut', () => {
 
 describe('réouverture après livraison partielle', () => {
   it('restaure les quantités, ressort le manquant du stock et recalcule le total', async () => {
-    const { product, client, staff } = await creerJeuDeDonnees({ stock: 10, prixCarton: 10 })
+    const { product, client, staff } = await creerJeuDeDonnees({ stock: 10 })
     const commande = await commander(client, product.id, 10)
     expect(await stockDe(product.id)).toBe(0)
 
@@ -185,8 +185,8 @@ describe('réouverture après livraison partielle', () => {
     })
     expect(livraison.statusCode, livraison.body).toBe(200)
     expect(await stockDe(product.id)).toBe(3)
-    expect(livraison.json().total).toBe(80)
-    expect(livraison.json().fraisLivraisonHT).toBe(10)
+    expect(livraison.json().total).toBe(1050)
+    expect(livraison.json().fraisLivraisonHT).toBe(0)
     expect(livraison.json().lignes[0].qtyCommandee).toBe(10)
 
     // Réouverture : les 3 manquants doivent ressortir du stock
@@ -196,7 +196,7 @@ describe('réouverture après livraison partielle', () => {
     const rouverte = reouverture.json()
     expect(rouverte.statut).toBe('Confirmée')
     expect(rouverte.lignes[0].qty).toBe(10)
-    expect(rouverte.total).toBe(110)
+    expect(rouverte.total).toBe(1500)
     expect(rouverte.cartons).toBe(10)
     expect(await stockDe(product.id)).toBe(0)
   })
@@ -221,7 +221,7 @@ describe('réouverture après livraison partielle', () => {
 
 describe('retours', () => {
   it('agrège deux lignes du même produit au lieu de les traiter séparément', async () => {
-    const { product, client, staff } = await creerJeuDeDonnees({ stock: 20, prixCarton: 10 })
+    const { product, client, staff } = await creerJeuDeDonnees({ stock: 20 })
     const commande = await commander(client, product.id, 10)
     await livrer(staff, commande)
     const stockAvant = await stockDe(product.id)
@@ -243,8 +243,8 @@ describe('retours', () => {
     // 7 cartons rendus au total, et la facturation tombe à 3
     expect(await stockDe(product.id)).toBe(stockAvant + 7)
     expect(res.json().lignes[0].qty).toBe(3)
-    expect(res.json().total).toBe(40)
-    expect(res.json().fraisLivraisonHT).toBe(10)
+    expect(res.json().total).toBe(450)
+    expect(res.json().fraisLivraisonHT).toBe(0)
   })
 
   it('refuse de rendre plus de cartons qu’il n’en a été livré, même réparti en plusieurs lignes', async () => {
@@ -290,7 +290,7 @@ describe('modification de commande', () => {
   })
 
   it('conserve la remise dans le libellé de ligne après modification', async () => {
-    const { product, client, staff } = await creerJeuDeDonnees({ stock: 50, prixCarton: 10 })
+    const { product, client, staff } = await creerJeuDeDonnees({ stock: 50, prixCarton: 15 })
     await prisma.product.update({
       where: { id: product.id },
       data: { remiseSeuil: 10, remisePourcent: 5 },
@@ -473,15 +473,16 @@ describe('frais de livraison et signature CGV', () => {
     expect(row.signatureImageUrl?.startsWith('data:')).toBe(false)
   })
 
-  it('ajoute 10 € HT sous le franco, 0 € à partir de 150 € HT', async () => {
+  it('applique 10 € de port sous 150 € HT et offre le franco au-delà', async () => {
     const { product, client } = await creerJeuDeDonnees({ stock: 30, prixCarton: 10 })
     const petite = await commander(client, product.id, 5)
     expect(petite.fraisLivraisonHT).toBe(10)
     expect(petite.total).toBe(60)
-    expect(petite.signatureNom).toBe(SIGNATURE_COMMANDE.signatureNom)
+    expect(await stockDe(product.id)).toBe(25)
 
     const franco = await commander(client, product.id, 15)
     expect(franco.fraisLivraisonHT).toBe(0)
     expect(franco.total).toBe(150)
+    expect(franco.signatureNom).toBe(SIGNATURE_COMMANDE.signatureNom)
   })
 })

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Trash2, AlertCircle, CheckCircle2, Minus, Plus, BadgePercent, Package, FileText } from 'lucide-react'
+import { X, Trash2, AlertCircle, Minus, Plus, BadgePercent, Package, FileText } from 'lucide-react'
 import { euros, tarifLigne } from '../data.js'
 import { fraisLivraisonHT, TEXTE_PAIEMENT_SEPA } from '../frais-livraison.js'
 import { useCompany } from '../company.jsx'
 import { ClientsApi } from '../api/index.js'
+import Overlay from './Overlay.jsx'
 
 function canvasADeLencre(canvas) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
@@ -18,7 +19,6 @@ function canvasADeLencre(canvas) {
 function PadSignature({ onChange }) {
   const canvasRef = useRef(null)
   const dessin = useRef(false)
-  const [vide, setVide] = useState(true)
 
   const pret = () => {
     const c = canvasRef.current
@@ -35,7 +35,6 @@ function PadSignature({ onChange }) {
     ctx.lineWidth = 2.4
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    setVide(true)
     onChange(null)
   }
 
@@ -75,7 +74,6 @@ function PadSignature({ onChange }) {
     e.preventDefault()
     const c = canvasRef.current
     const encre = canvasADeLencre(c)
-    setVide(!encre)
     onChange(encre ? c.toDataURL('image/jpeg', 0.82) : null)
   }
 
@@ -97,11 +95,6 @@ function PadSignature({ onChange }) {
           onPointerUp={end}
           onPointerCancel={end}
         />
-        {vide && (
-          <p className="pad-signature-hint" aria-hidden="true">
-            Signez ici
-          </p>
-        )}
       </div>
     </div>
   )
@@ -109,7 +102,6 @@ function PadSignature({ onChange }) {
 
 export default function Panier({ client, produits, panier, onChange, onClose, onValider }) {
   const company = useCompany()
-  const minCartons = client.minCartons
   const lignes = produits.filter((p) => (panier[p.id] ?? 0) > 0)
   const totalCartons = lignes.reduce((s, p) => s + panier[p.id], 0)
   const tarifs = Object.fromEntries(lignes.map((p) => [p.id, tarifLigne(client, p, panier[p.id])]))
@@ -117,7 +109,6 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
   const frais = fraisLivraisonHT(sousTotal)
   const totalPrix = Math.round((sousTotal + frais) * 100) / 100
   const economie = lignes.reduce((s, p) => s + (tarifs[p.id].pu * panier[p.id] - tarifs[p.id].total), 0)
-  const manque = minCartons - totalCartons
   const [nom, setNom] = useState(client.nom ?? '')
   const [cgvOk, setCgvOk] = useState(false)
   const [trait, setTrait] = useState(null)
@@ -160,10 +151,10 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-panier">
         <div className="sheet-header">
-          <h2 id="titre-panier" className="sheet-title">Panier de commande</h2>
+          <h2 id="titre-panier" className="sheet-title">Panier</h2>
           <button className="icon-btn" style={{ color: 'var(--gray-600)' }} onClick={onClose} aria-label="Fermer le panier">
             <X size={22} />
           </button>
@@ -246,20 +237,6 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
 
         {lignes.length > 0 && (
           <div className="sheet-footer">
-            {manque > 0 ? (
-              <div className="alerte-min" role="alert">
-                <AlertCircle size={18} aria-hidden="true" />
-                <span>
-                  Ajoutez encore {manque} {manque > 1 ? 'cartons' : 'carton'} pour atteindre le
-                  minimum de {minCartons} cartons par livraison.
-                </span>
-              </div>
-            ) : (
-              <div className="ok-min">
-                <CheckCircle2 size={18} aria-hidden="true" />
-                <span>Minimum de commande atteint</span>
-              </div>
-            )}
             {economie > 0.004 && (
               <div className="total-row">
                 <span>Économie remises</span>
@@ -271,7 +248,7 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
               <span>{euros(sousTotal)} HT</span>
             </div>
             <div className="total-row">
-              <span>{frais === 0 ? 'Livraison (franco dès 150 € HT)' : 'Frais de livraison'}</span>
+              <span>{frais === 0 ? 'Livraison' : 'Frais de livraison'}</span>
               <span>{frais === 0 ? 'offerts' : euros(frais)}</span>
             </div>
             <div className="total-row">
@@ -298,7 +275,7 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
             ) : (
             <button
               className="btn btn-primary"
-              disabled={manque > 0 || !cgvOk || nom.trim().length < 2 || !trait}
+              disabled={!cgvOk || nom.trim().length < 2 || !trait}
               onClick={() => onValider({ nom: nom.trim(), acceptationCgv: true, image: trait })}
             >
               Signer et valider la commande

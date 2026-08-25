@@ -30,7 +30,7 @@ export async function appliquerGardeProd(log: FastifyBaseLogger) {
   if (clients.length > 0) {
     await prisma.client.updateMany({
       where: { id: { in: clients.map((c) => c.id) } },
-      data: { actif: false },
+      data: { actif: false, sessionVersion: { increment: 1 } },
     })
     log.warn(
       `Comptes restaurants démo désactivés : ${clients.map((c) => c.code).join(', ')}. Crée les vrais clients depuis l'admin.`,
@@ -43,7 +43,10 @@ export async function appliquerGardeProd(log: FastifyBaseLogger) {
   })
   for (const s of staffDemo) {
     if (await hashEstUnDemo(s.motDePasseHash)) {
-      await prisma.staff.update({ where: { id: s.id }, data: { actif: false } })
+      await prisma.staff.update({
+        where: { id: s.id },
+        data: { actif: false, sessionVersion: { increment: 1 } },
+      })
       log.warn(`Compte staff démo ${s.code} désactivé (mot de passe de seed).`)
     }
   }

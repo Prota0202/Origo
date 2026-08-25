@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Minus, Plus, Check, PackageX, Camera, RotateCcw, ImagePlus } from 'lucide-react'
 import { euros } from '../data.js'
 import { redimensionnerImage } from '../image.js'
+import Overlay from './Overlay.jsx'
 
 function estMobile() {
   if (typeof navigator === 'undefined') return false
@@ -64,7 +65,7 @@ export default function ConfirmerLivraison({ commande, onValider, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-confirmer-livraison">
         <div className="sheet-header">
           <h2 id="titre-confirmer-livraison" className="sheet-title">Livraison {commande.numero}</h2>

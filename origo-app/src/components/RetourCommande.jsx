@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Minus, Plus, Undo2, PackageCheck, PackageX } from 'lucide-react'
 import { euros } from '../data.js'
+import Overlay from './Overlay.jsx'
 
 // Retour après livraison (admin uniquement) : le client a signalé un souci
 // (casse, périmé, erreur…) après coup, une fois la commande déjà livrée.
@@ -45,7 +46,7 @@ export default function RetourCommande({ commande, onValider, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-retour-commande">
         <div className="sheet-header">
           <h2 id="titre-retour-commande" className="sheet-title">Retour {commande.numero}</h2>

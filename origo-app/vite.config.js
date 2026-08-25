@@ -15,7 +15,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Change ce cacheId à chaque fois qu'un vieux téléphone reste coincé
         // sur l'ancienne PWA après un déploiement.
-        cacheId: 'origo-20260820-signature',
+        cacheId: 'origo-20260825-session',
         navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
       },
       manifest: {

@@ -44,10 +44,10 @@ describe('signature Stripe', () => {
 })
 
 describe('POST /api/v1/stripe/webhook', () => {
-  it('répond au GET du navigateur sans 404', async () => {
+  it('refuse le GET (pas de notice publique)', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/stripe/webhook' })
-    expect(res.statusCode).toBe(200)
-    expect(res.json().methode).toBe('POST')
+    expect(res.statusCode).toBe(405)
+    expect(res.json().methode).toBeUndefined()
   })
 
   it('marque la commande payée sans JWT', async () => {

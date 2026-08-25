@@ -1,12 +1,12 @@
 const TOKEN_KEY = 'origo-token'
 
+/** Ancien JWT en localStorage : on l’efface, on ne le relit plus (cookie httpOnly). */
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY)
+  return null
 }
 
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  else localStorage.removeItem(TOKEN_KEY)
+export function setToken(_token) {
+  localStorage.removeItem(TOKEN_KEY)
 }
 
 export function clearSession() {
@@ -25,20 +25,17 @@ async function parseBody(res) {
 }
 
 /**
- * Client HTTP vers l'API ORIGO.
- * Base URL : VITE_API_URL ou proxy Vite `/api`.
+ * Client HTTP vers l’API ORIGO.
+ * Session = cookie httpOnly (credentials: include). Pas de JWT dans JS.
  */
 export async function api(path, { method = 'GET', body, auth = true } = {}) {
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (auth) {
-    const token = getToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
 
   const res = await fetch(path.startsWith('/api') ? path : `/api/v1${path}`, {
     method,
     headers,
+    credentials: 'include',
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 

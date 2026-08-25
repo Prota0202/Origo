@@ -3,8 +3,11 @@ import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { euros, pourcentagePalier, formatPourcentage } from '../../data.js'
 import { ClientsApi } from '../../api/index.js'
 import { slug } from './utils.js'
+import { useCompany } from '../../company.jsx'
+import Overlay from '../Overlay.jsx'
 
 export function ClientForm({ client, produits, onSave, onClose }) {
+  const { mdpMinCaracteres: mdpMin = 12 } = useCompany()
   const [f, setF] = useState(
     client
       ? { ...client, paliers: client.paliers ?? {} }
@@ -81,7 +84,7 @@ export function ClientForm({ client, produits, onSave, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <form className="sheet" onSubmit={enregistrer} role="dialog" aria-modal="true" aria-labelledby="titre-client-form">
         <div className="sheet-header">
           <h2 id="titre-client-form" className="sheet-title">
@@ -122,13 +125,16 @@ export function ClientForm({ client, produits, onSave, onClose }) {
               <input type="text" value={f.code} onChange={maj('code')} autoCapitalize="characters" required />
             </label>
             <label className="champ">
-              <span>Mot de passe{client ? ' (laisser vide = inchangé)' : ''}</span>
+              <span>
+                Mot de passe{client ? ' (laisser vide = inchangé)' : ` (${mdpMin} caractères minimum)`}
+              </span>
               <input
                 type="password"
                 value={f.motDePasse ?? ''}
                 onChange={maj('motDePasse')}
                 required={!client}
-                autoComplete={client ? 'new-password' : 'new-password'}
+                minLength={f.motDePasse ? mdpMin : undefined}
+                autoComplete="new-password"
               />
             </label>
           </div>
@@ -138,8 +144,8 @@ export function ClientForm({ client, produits, onSave, onClose }) {
               <input type="email" value={f.email} onChange={maj('email')} placeholder="utile pour le mandat SEPA" />
             </label>
             <label className="champ">
-              <span>Min. cartons / livraison</span>
-              <input type="number" inputMode="numeric" min="1" value={f.minCartons} onChange={maj('minCartons')} required />
+              <span>Franco de port</span>
+              <input type="text" value="dès 150 € HT" disabled readOnly />
             </label>
             <label className="champ">
               <span>Paiement</span>
@@ -328,7 +334,7 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
             </p>
             <p className="ligne-detail">
               {[c.ville, c.adresse, c.telephone, `code ${c.code}`].filter(Boolean).join(' · ')}
-              {` · ${c.produits.length} produits · min. ${c.minCartons} cartons`}
+              {` · ${c.produits.length} produits · franco dès 150 € HT`}
               {(c.modePaiement ?? 'sepa') === 'stripe'
                 ? ' · carte'
                 : c.sepaMandatOk

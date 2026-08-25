@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, RotateCw, X, ZoomIn } from 'lucide-react'
 import { chargerImage, pivoterImage, recadrerImage } from '../image.js'
+import Overlay from './Overlay.jsx'
 
 const CADRE_RATIO = 4 / 3
 const CADRE_LARGEUR = 320
@@ -32,7 +33,7 @@ export default function AjusterPhoto({ src, onValider, onAnnuler }) {
   if (!image) {
     return (
       <>
-        <div className="overlay" aria-hidden="true" />
+        <Overlay />
         <div className="sheet" role="dialog" aria-modal="true" aria-label="Chargement de la photo">
           <div className="sheet-body" style={{ textAlign: 'center', padding: 48, color: 'var(--gray-600)' }}>
             Chargement…
@@ -105,7 +106,7 @@ export default function AjusterPhoto({ src, onValider, onAnnuler }) {
 
   return (
     <>
-      <div className="overlay" onClick={onAnnuler} aria-hidden="true" />
+      <Overlay onClick={onAnnuler} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-ajuster-photo">
         <div className="sheet-header">
           <h2 id="titre-ajuster-photo" className="sheet-title">Ajuster la photo</h2>

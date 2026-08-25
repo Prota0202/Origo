@@ -26,13 +26,9 @@ export default function Login({ onLogin }) {
     <div className="login-page">
       <div className="login-hero">
         <span className="logo">origo<span className="logo-dot" aria-hidden="true" /></span>
-        <p>Espace professionnel</p>
       </div>
       <form className="login-card" onSubmit={connecter}>
         <h1 className="page-title">Connexion</h1>
-        <p className="page-subtitle" style={{ marginBottom: 16 }}>
-          Restaurants et équipe ORIGO
-        </p>
 
         <label className="champ">
           <span>Code</span>

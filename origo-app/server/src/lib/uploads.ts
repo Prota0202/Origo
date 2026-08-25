@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { createReadStream, closeSync, existsSync, mkdirSync, openSync, readSync, unlinkSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { dirname, extname, join, resolve } from 'node:path'
@@ -82,11 +82,66 @@ export function ensureUploadDir() {
   if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true })
 }
 
-function extFromMime(mime: string) {
-  if (mime.includes('png')) return 'png'
-  if (mime.includes('webp')) return 'webp'
-  if (mime.includes('gif')) return 'gif'
-  return 'jpg'
+/** JPEG / PNG / GIF / WebP d’après les octets, pas d’après le MIME déclaré par le client. */
+export function detecterTypeImage(buf: Buffer): 'jpeg' | 'png' | 'gif' | 'webp' | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpeg'
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return 'png'
+  }
+  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) {
+    return 'gif'
+  }
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return 'webp'
+  }
+  return null
+}
+
+function mimeDepuisType(t: 'jpeg' | 'png' | 'gif' | 'webp') {
+  if (t === 'png') return 'image/png'
+  if (t === 'webp') return 'image/webp'
+  if (t === 'gif') return 'image/gif'
+  return 'image/jpeg'
+}
+
+function typeDepuisFichier(full: string, ext: string): string {
+  try {
+    const fd = openSync(full, 'r')
+    try {
+      const buf = Buffer.alloc(12)
+      const n = readSync(fd, buf, 0, 12, 0)
+      const t = detecterTypeImage(buf.subarray(0, n))
+      if (t) return mimeDepuisType(t)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    /* repli extension */
+  }
+  if (ext === '.png') return 'image/png'
+  if (ext === '.webp') return 'image/webp'
+  if (ext === '.gif') return 'image/gif'
+  return 'image/jpeg'
 }
 
 /**
@@ -104,8 +159,10 @@ export async function persistImageField(
     // Le front réenvoie l’URL qu’il a reçue, donc signée. Stocker la signature en
     // base ferait pointer la photo vers une URL périmée dès l’expiration, et la
     // resignature produirait `?e=…&s=…?e=…&s=…`.
+    // Uniquement chemins locaux : une URL https:// permettrait de faire charger
+    // un domaine tiers par le navigateur des restaurants (tracking / XSS).
     if (value.startsWith('/uploads/')) return value.split('?')[0]
-    return value
+    throw new ValidationError('Photo : fichier local /uploads uniquement')
   }
 
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(value)
@@ -116,8 +173,12 @@ export async function persistImageField(
     throw new ValidationError('Image trop lourde (max 2,5 Mo après compression)')
   }
 
+  const type = detecterTypeImage(buf)
+  if (!type) throw new ValidationError('Fichier image non reconnu')
+
   ensureUploadDir()
-  const name = `${prefix}-${Date.now()}-${randomBytes(4).toString('hex')}.${extFromMime(match[1])}`
+  const ext = type === 'jpeg' ? 'jpg' : type
+  const name = `${prefix}-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`
   await writeFile(join(UPLOAD_DIR, name), buf)
   return `/uploads/${name}`
 }
@@ -172,14 +233,7 @@ export async function registerUploadsStatic(app: FastifyInstance) {
     const full = join(UPLOAD_DIR, file)
     if (!existsSync(full)) return reply.code(404).send({ error: 'NOT_FOUND' })
     const ext = extname(file).toLowerCase()
-    const type =
-      ext === '.png'
-        ? 'image/png'
-        : ext === '.webp'
-          ? 'image/webp'
-          : ext === '.gif'
-            ? 'image/gif'
-            : 'image/jpeg'
+    const type = typeDepuisFichier(full, ext)
     // `private` : un cache partagé (proxy d’entreprise, CDN) ne doit pas garder une
     // photo de livraison. `max-age` borné par la validité de la signature, sinon le
     // navigateur servirait une image dont l’URL est déjà refusée par le serveur.

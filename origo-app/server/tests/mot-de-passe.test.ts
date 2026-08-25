@@ -47,8 +47,8 @@ describe('PATCH /api/v1/me/mot-de-passe', () => {
       payload: { actuel: 'motdepasse-test', nouveau: 'nouveau-secret' },
     })
     expect(res.statusCode, res.body).toBe(200)
-    expect(res.json().token).toBeTruthy()
     expect(res.json().user.mdpAChanger).toBe(false)
+    expect(res.cookies.find((c) => c.name === 'origo_session')?.value).toBeTruthy()
 
     const login = await app.inject({
       method: 'POST',
@@ -78,6 +78,7 @@ describe('PATCH /api/v1/me/mot-de-passe', () => {
       code: client.code,
       nom: client.nom,
       mdpAChanger: true,
+      sv: 0,
     })
 
     const commande = await app.inject({

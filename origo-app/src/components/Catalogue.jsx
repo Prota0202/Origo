@@ -1,6 +1,11 @@
 import { useState } from 'react'
-import { Minus, Plus, PackageOpen, Info, Star, StickyNote, RotateCcw, PackageX, BadgePercent } from 'lucide-react'
+import { Minus, Plus, PackageOpen, Star, StickyNote, RotateCcw, PackageX, BadgePercent } from 'lucide-react'
 import { euros, prixPour, pourcentagePalier, formatPourcentage } from '../data.js'
+import { volerVersPanier } from '../vol-panier.js'
+
+function sourceVol(el, carte) {
+  return carte?.querySelector('.produit-photo') || el || carte
+}
 
 function Stepper({ produit, qty, onChange }) {
   const plusDesactive = qty >= (produit.stock ?? Infinity)
@@ -13,14 +18,18 @@ function Stepper({ produit, qty, onChange }) {
       >
         <Minus size={18} />
       </button>
-      <span className="stepper-qty" aria-live="polite">
+      <span key={qty} className="stepper-qty stepper-qty-pop" aria-live="polite">
         {qty}
         <small>{qty > 1 ? 'cartons' : 'carton'}</small>
       </span>
       <button
         type="button"
         aria-label={`Ajouter un carton de ${produit.nom}`}
-        onClick={() => onChange(produit, qty + 1)}
+        onClick={(e) => {
+          const carte = e.currentTarget.closest('.card')
+          volerVersPanier(sourceVol(e.currentTarget, carte), produit.photo)
+          onChange(produit, qty + 1)
+        }}
         disabled={plusDesactive}
         style={plusDesactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
       >
@@ -51,35 +60,27 @@ function CarteProduit({ produit: p, client, panier, onChange, onMajClient, noteE
 
   return (
     <article className={`card ${rupture ? 'card-rupture' : ''}`}>
-      {p.photo ? (
-        <img className="produit-photo" src={p.photo} alt={p.nom} loading="lazy" />
-      ) : (
-        <div className="produit-photo produit-photo-vide" aria-hidden="true">
-          <PackageOpen size={28} />
-        </div>
-      )}
-      <div className="produit-header">
-        <div>
-          <h3 className="produit-nom">{p.nom}</h3>
-          <p className="produit-desc">{p.description}</p>
-        </div>
-        <div className="produit-cote">
-          <span className="produit-prix">{euros(prixPour(client, p))}</span>
-          <button
-            type="button"
-            className={`fav-btn ${favori ? 'actif' : ''}`}
-            onClick={basculerFavori}
-            aria-label={favori ? `Retirer ${p.nom} des favoris` : `Épingler ${p.nom} en favori`}
-            aria-pressed={favori}
-          >
-            <Star size={20} fill={favori ? 'currentColor' : 'none'} />
-          </button>
-        </div>
+      <div className="produit-visuel">
+        {p.photo ? (
+          <img className="produit-photo" src={p.photo} alt={p.nom} loading="lazy" />
+        ) : (
+          <div className="produit-photo produit-photo-vide" aria-hidden="true">
+            <PackageOpen size={22} />
+          </div>
+        )}
+        <span className="prix-badge">{euros(prixPour(client, p))}</span>
+        <button
+          type="button"
+          className={`fav-btn fav-btn-photo ${favori ? 'actif' : ''}`}
+          onClick={basculerFavori}
+          aria-label={favori ? `Retirer ${p.nom} des favoris` : `Épingler ${p.nom} en favori`}
+          aria-pressed={favori}
+        >
+          <Star size={16} fill={favori ? 'currentColor' : 'none'} />
+        </button>
       </div>
-      <p className="produit-meta">
-        <PackageOpen size={14} style={{ verticalAlign: '-2px' }} aria-hidden="true" />{' '}
-        {p.unitesParCarton} pièces / carton
-      </p>
+      <h3 className="produit-nom">{p.nom}</h3>
+      <p className="produit-meta">{p.unitesParCarton} p. / carton</p>
       {client.paliers?.[p.id]?.length > 0 && !rupture ? (
         <p className="tag-remise">
           <BadgePercent size={14} aria-hidden="true" />{' '}
@@ -114,23 +115,21 @@ function CarteProduit({ produit: p, client, panier, onChange, onMajClient, noteE
       <div className="produit-footer">
         {rupture ? (
           <p className="tag-rupture">
-            <PackageX size={16} aria-hidden="true" /> Rupture de stock — bientôt réapprovisionné
+            <PackageX size={16} aria-hidden="true" /> Rupture
           </p>
         ) : qty === 0 ? (
           <div className="footer-actions">
-            <button type="button" className="btn btn-primary" onClick={() => onChange(p, 1)}>
-              <Plus size={18} aria-hidden="true" /> Ajouter au panier
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={(e) => {
+                const carte = e.currentTarget.closest('.card')
+                volerVersPanier(sourceVol(e.currentTarget, carte), p.photo)
+                onChange(p, 1)
+              }}
+            >
+              <Plus size={16} aria-hidden="true" /> Ajouter
             </button>
-            {!note && noteEnEdition !== p.id && (
-              <button
-                type="button"
-                className="icon-btn icon-btn-gris"
-                onClick={() => setNoteEnEdition(p.id)}
-                aria-label={`Ajouter une note sur ${p.nom}`}
-              >
-                <StickyNote size={18} />
-              </button>
-            )}
           </div>
         ) : (
           <Stepper produit={p} qty={qty} onChange={onChange} />
@@ -151,23 +150,14 @@ export default function Catalogue({ client, produits, panier, onChange, onMajCli
 
   return (
     <section aria-labelledby="titre-catalogue">
-      <h1 id="titre-catalogue" className="page-title">Catalogue</h1>
-      <p className="page-subtitle">
-        Sélection établie pour <strong>{client.nom}</strong> — vendue au carton
-      </p>
-
-      <div className="min-banner" role="note">
-        <Info size={20} aria-hidden="true" />
-        <span>
-          Minimum de commande&nbsp;: <strong>{client.minCartons} cartons</strong> par livraison
-        </span>
+      <div className="page-barre">
+        <h1 id="titre-catalogue" className="page-title">Catalogue</h1>
+        {onRecommander && (
+          <button type="button" className="lien-recommander" onClick={onRecommander}>
+            <RotateCcw size={14} aria-hidden="true" /> Recommander
+          </button>
+        )}
       </div>
-
-      {onRecommander && (
-        <button type="button" className="btn btn-ghost btn-recommander" onClick={onRecommander}>
-          <RotateCcw size={18} aria-hidden="true" /> Recommander ma dernière commande
-        </button>
-      )}
 
       {favoris.length > 0 && (
         <div>

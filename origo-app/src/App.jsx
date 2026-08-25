@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, ReceiptText, Headset, ShoppingCart, QrCode, CheckCircle2, LogOut, PackageSearch } from 'lucide-react'
+import { BookOpen, ReceiptText, Headset, ShoppingCart, CheckCircle2, LogOut, PackageSearch } from 'lucide-react'
 import { getDelaiModificationMs } from './company.jsx'
-import { AuthApi, ProductsApi, ClientsApi, OrdersApi, setToken, clearSession, getToken } from './api/index.js'
+import { euros, tarifLigne } from './data.js'
+import { AuthApi, ProductsApi, ClientsApi, OrdersApi, clearSession } from './api/index.js'
 import Login from './components/Login.jsx'
 import Admin from './components/Admin.jsx'
 import Catalogue from './components/Catalogue.jsx'
@@ -9,14 +10,13 @@ import AutresProduits from './components/AutresProduits.jsx'
 import Panier from './components/Panier.jsx'
 import Commandes from './components/Commandes.jsx'
 import ServiceClient from './components/ServiceClient.jsx'
-import QRModal from './components/QRModal.jsx'
 import ChangerMotDePasse from './components/ChangerMotDePasse.jsx'
 
 const TABS = [
   { id: 'catalogue', label: 'Catalogue', icon: BookOpen },
-  { id: 'autres', label: 'Autres produits', icon: PackageSearch },
+  { id: 'autres', label: 'Autres', icon: PackageSearch },
   { id: 'commandes', label: 'Commandes', icon: ReceiptText },
-  { id: 'service', label: 'Service client', icon: Headset },
+  { id: 'service', label: 'Aide', icon: Headset },
 ]
 
 const MESSAGE_STATUT = {
@@ -28,7 +28,7 @@ const MESSAGE_STATUT = {
 }
 
 export default function App() {
-  const [boot, setBoot] = useState(!!getToken())
+  const [boot, setBoot] = useState(true)
   const [user, setUser] = useState(null)
   const [produits, setProduits] = useState([])
   const [clients, setClients] = useState([])
@@ -39,7 +39,6 @@ export default function App() {
   const [panier, setPanier] = useState({})
   const [panierOuvert, setPanierOuvert] = useState(false)
   const clientsRef = useRef([])
-  const [qrOuvert, setQrOuvert] = useState(false)
   const [toast, setToast] = useState(null)
   const [notifCommandes, setNotifCommandes] = useState(false)
   const [erreurBoot, setErreurBoot] = useState(null)
@@ -138,18 +137,11 @@ export default function App() {
     )
   }, [])
 
-  // Restaurer session JWT au démarrage (timeout pour ne jamais rester bloqué)
+  // Restaurer session cookie au démarrage (timeout pour ne jamais rester bloqué)
   useEffect(() => {
     let cancelled = false
     const finBoot = () => {
       if (!cancelled) setBoot(false)
-    }
-
-    if (!getToken()) {
-      finBoot()
-      return () => {
-        cancelled = true
-      }
     }
 
     const timeout = setTimeout(() => {
@@ -183,7 +175,7 @@ export default function App() {
     }
   }, [chargerDonneesClient, chargerDonneesStaff])
 
-  // Polling commandes seulement (évite de recharger catalogues/photos toutes les 15 s)
+  // Polling commandes (45 s resto / 20 s staff) : assez pour le statut, pas un DDoS à 200 comptes
   useEffect(() => {
     if (!user || user.mdpAChanger) return
     const tick = async () => {
@@ -223,7 +215,7 @@ export default function App() {
         setHorsLigne(true)
       }
     }
-    const id = setInterval(tick, 15000)
+    const id = setInterval(tick, user.type === 'client' ? 45000 : 20000)
     return () => clearInterval(id)
   }, [user, rafraichirCommandesStaff])
 
@@ -301,8 +293,7 @@ export default function App() {
 
   const seConnecter = async (code, motDePasse) => {
     try {
-      const { token, user: u } = await AuthApi.login(code, motDePasse)
-      setToken(token)
+      const { user: u } = await AuthApi.login(code, motDePasse)
       setUser(u)
       setTab('catalogue')
       setPanier({})
@@ -316,7 +307,12 @@ export default function App() {
     }
   }
 
-  const seDeconnecter = () => {
+  const seDeconnecter = async () => {
+    try {
+      await AuthApi.logout()
+    } catch {
+      /* session déjà close */
+    }
     clearSession()
     setUser(null)
     setProduits([])
@@ -328,6 +324,11 @@ export default function App() {
   }
 
   const totalCartons = Object.values(panier).reduce((s, q) => s + q, 0)
+  const sousTotalPanier = client
+    ? produits
+        .filter((p) => (panier[p.id] ?? 0) > 0)
+        .reduce((s, p) => s + tarifLigne(client, p, panier[p.id]).total, 0)
+    : 0
 
   const changerQuantite = (produit, qty) => {
     const max = produit.stock ?? Infinity
@@ -445,8 +446,7 @@ export default function App() {
         <div className="login-card">
           <ChangerMotDePasse
             obligatoire
-            onChange={async ({ token, user: u }) => {
-              setToken(token)
+            onChange={async ({ user: u }) => {
               setUser(u)
               if (u.type === 'staff') await chargerDonneesStaff()
               else await chargerDonneesClient(u)
@@ -500,19 +500,18 @@ export default function App() {
         </div>
         <div className="header-actions">
           <button
-            className="icon-btn"
-            onClick={() => setQrOuvert(true)}
-            aria-label="Afficher le QR code pour ouvrir sur mobile"
-          >
-            <QrCode size={22} />
-          </button>
-          <button
-            className="icon-btn"
+            className={totalCartons > 0 ? 'btn-panier-header' : 'icon-btn'}
+            data-panier-cible
             onClick={() => setPanierOuvert(true)}
             aria-label={`Ouvrir le panier, ${totalCartons} cartons`}
           >
             <ShoppingCart size={22} />
-            {totalCartons > 0 && <span className="badge">{totalCartons}</span>}
+            {totalCartons > 0 ? (
+              <span className="panier-header-info">
+                <strong>{totalCartons}</strong>
+                <small>{euros(sousTotalPanier)}</small>
+              </span>
+            ) : null}
           </button>
           <button className="icon-btn" onClick={seDeconnecter} aria-label="Se déconnecter">
             <LogOut size={20} />
@@ -582,17 +581,10 @@ export default function App() {
           onChange={changerQuantite}
           onClose={() => setPanierOuvert(false)}
           onValider={(signature) => {
-            const cartons = Object.values(panier).reduce((s, q) => s + q, 0)
-            if (cartons < (client.minCartons ?? 5)) {
-              showToast(`Minimum ${client.minCartons} cartons`)
-              return
-            }
             void validerCommande(signature)
           }}
         />
       )}
-      {qrOuvert && <QRModal onClose={() => setQrOuvert(false)} />}
-
       {horsLigne && (
         <div className="bandeau-hors-ligne" role="status">
           Connexion perdue — les commandes ne se mettent plus à jour.

@@ -3,7 +3,8 @@
  * Un n° TVA placeholder (BE000…) n'est jamais renvoyé : ce n'est pas un
  * identifiant, et l'imprimer sur un bon ferait croire à une facture valide.
  */
-import { CGV_DEFAUT, FRAIS_LIVRAISON_HT, SEUIL_FRANCO_HT, TEXTE_PAIEMENT_SEPA } from './frais-livraison.js'
+import { CGV_DEFAUT, FRAIS_LIVRAISON_HT, SEUIL_FRANCO_HT, TEXTE_PAIEMENT_SEPA, normaliserCgv } from './frais-livraison.js'
+import { longueurMinMotDePasse } from './mot-de-passe.js'
 import { env } from '../config/env.js'
 import { prisma } from './prisma.js'
 
@@ -35,11 +36,12 @@ export async function lireSociete() {
     tvaRate: env.company.tvaRate,
     delaiModificationMs: env.delaiModificationMs,
     horaires,
-    conditionsGenerales: row?.conditionsGenerales?.trim() || CGV_DEFAUT,
+    conditionsGenerales: normaliserCgv(row?.conditionsGenerales?.trim() || CGV_DEFAUT),
     seuilFrancoHT: SEUIL_FRANCO_HT,
     fraisLivraisonHT: FRAIS_LIVRAISON_HT,
     textePaiementSepa: TEXTE_PAIEMENT_SEPA,
     paiementStripeActif: env.stripe.actif,
+    mdpMinCaracteres: longueurMinMotDePasse(),
   }
 }
 

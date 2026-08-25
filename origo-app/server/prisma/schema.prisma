@@ -41,6 +41,8 @@ model Staff {
   actif          Boolean   @default(true)
   /// true = la session ne peut que changer le mot de passe (seed / fuite).
   mdpAChanger    Boolean   @default(false)
+  /// Incrémenté au changement de mot de passe / désactivation : les cookies déjà émis meurent.
+  sessionVersion Int       @default(0)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -81,6 +83,7 @@ model Client {
   modePaiement   String   @default("sepa")
   actif          Boolean  @default(true)
   mdpAChanger    Boolean  @default(false)
+  sessionVersion Int      @default(0)
   stripeCustomerId           String?   @unique
   stripeSepaPaymentMethodId  String?
   sepaIbanLast4              String?

@@ -4,8 +4,9 @@ import { prisma } from '../../lib/prisma.js'
 import { hasherMotDePasse, verifierMotDePasse } from '../../lib/password.js'
 import { assertMotDePasseAcceptable } from '../../lib/mot-de-passe.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
-import { requireClient, requireStaff, authenticate, signerSession } from '../../plugins/auth.js'
+import { poserCookieSession, signerSession, authenticate, requireClient, requireStaff } from '../../plugins/auth.js'
 import { ROLE_UI, mapClient } from '../../lib/mappers.js'
+import { oublierSession } from '../../lib/session.js'
 
 const clientInclude = {
   catalogue: true,
@@ -16,7 +17,7 @@ const clientInclude = {
 
 /** Self-service client (/me) + demandes produit (staff). */
 export async function meRoutes(app: FastifyInstance) {
-  app.patch('/api/v1/me/mot-de-passe', { preHandler: authenticate }, async (req) => {
+  app.patch('/api/v1/me/mot-de-passe', { preHandler: authenticate }, async (req, reply) => {
     const parsed = z
       .object({
         actuel: z.string().min(1),
@@ -40,19 +41,21 @@ export async function meRoutes(app: FastifyInstance) {
       }
       const updated = await prisma.staff.update({
         where: { id: staff.id },
-        data: { motDePasseHash: hash, mdpAChanger: false },
+        data: { motDePasseHash: hash, mdpAChanger: false, sessionVersion: { increment: 1 } },
       })
+      oublierSession('staff', staff.id)
       const token = signerSession(app, {
         typ: 'staff',
         sub: updated.id,
         role: updated.role,
         code: updated.code,
         nom: updated.nom,
+        sv: updated.sessionVersion,
         mdpAChanger: false,
       })
+      poserCookieSession(reply, token)
       return {
         ok: true,
-        token,
         user: {
           type: 'staff' as const,
           id: updated.id,
@@ -71,22 +74,24 @@ export async function meRoutes(app: FastifyInstance) {
     }
     const updated = await prisma.client.update({
       where: { id: client.id },
-      data: { motDePasseHash: hash, mdpAChanger: false },
+      data: { motDePasseHash: hash, mdpAChanger: false, sessionVersion: { increment: 1 } },
     })
+    oublierSession('client', client.id)
     const token = signerSession(app, {
       typ: 'client',
       sub: updated.id,
       code: updated.code,
       nom: updated.nom,
+      sv: updated.sessionVersion,
       mdpAChanger: false,
     })
+    poserCookieSession(reply, token)
     const complet = await prisma.client.findUniqueOrThrow({
       where: { id: updated.id },
       include: clientInclude,
     })
     return {
       ok: true,
-      token,
       user: { type: 'client' as const, ...mapClient(complet), mdpAChanger: false },
     }
   })

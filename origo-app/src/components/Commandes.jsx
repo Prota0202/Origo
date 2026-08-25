@@ -8,6 +8,7 @@ import { envoyerParEmail, htDocument, libelleDocument, portDocument } from '../d
 import { TEXTE_PAIEMENT_SEPA } from '../frais-livraison.js'
 import { useCompany, getDelaiModificationMs } from '../company.jsx'
 import ModifierCommande from './ModifierCommande.jsx'
+import Overlay from './Overlay.jsx'
 
 const CLASSE_STATUT = {
   Confirmée: 'statut-confirmee',
@@ -42,7 +43,7 @@ function DocumentModal({ type, commande, onClose }) {
   const tva = Math.round(ht * tvaRate * 100) / 100
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-doc">
         <div className="sheet-header">
           <h2 id="titre-doc" className="sheet-title">
@@ -195,13 +196,11 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
   return (
     <section aria-labelledby="titre-commandes">
       <h1 id="titre-commandes" className="page-title">Commandes</h1>
-      <p className="page-subtitle">Historique, documents et bons de commande</p>
 
       {commandes.length === 0 ? (
         <div className="empty">
           <ClipboardList size={40} aria-hidden="true" />
           <p>Aucune commande pour le moment.</p>
-          <p style={{ fontSize: 14 }}>Vos commandes validées apparaîtront ici, avec le bon dès la confirmation.</p>
           {onAllerCatalogue && (
             <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={onAllerCatalogue}>
               Voir le catalogue
@@ -300,7 +299,6 @@ export default function Commandes({ commandes, client, produits, onModifier, onA
         <ModifierCommande
           commande={modifierCible}
           produits={produits}
-          minCartons={client.minCartons}
           onValider={(lignes, total, cartons) => {
             onModifier(modifierCible, lignes, total, cartons)
             setModifierCible(null)

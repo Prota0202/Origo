@@ -63,5 +63,6 @@ describe('comptes staff et fiche société', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().vat).not.toBe('BE0000000000')
     expect(res.json().factureLegale).toBe(Boolean(res.json().vat))
+    expect(res.json().mdpMinCaracteres).toBe(8)
   })
 })

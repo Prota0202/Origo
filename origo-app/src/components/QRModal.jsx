@@ -1,5 +1,6 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { X } from 'lucide-react'
+import Overlay from './Overlay.jsx'
 
 const urlApp = () => {
   if (typeof window === 'undefined') return ''
@@ -13,7 +14,7 @@ export default function QRModal({ onClose }) {
   const url = urlApp()
   return (
     <>
-      <div className="overlay" onClick={onClose} aria-hidden="true" />
+      <Overlay onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="titre-qr">
         <div className="sheet-header">
           <h2 id="titre-qr" className="sheet-title">Ouvrir sur mobile</h2>

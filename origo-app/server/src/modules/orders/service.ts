@@ -188,9 +188,6 @@ export async function creerCommande(
     }
 
     const cartons = lignes.reduce((s, l) => s + l.qty, 0)
-    if (cartons < client.minCartons) {
-      throw new ValidationError(`Minimum ${client.minCartons} cartons requis`)
-    }
 
     const catalogIds = new Set(client.catalogue.filter((c) => c.visible).map((c) => c.productId))
     type ItemData = {
@@ -294,26 +291,42 @@ export async function creerCommande(
   return paiementUrl ? { ...mapped, paiementUrl } : mapped
 }
 
-/** Garde-fou avant pagination réelle : l’admin ne doit pas charger 10 000 commandes d’un coup. */
-const LIMITE_LISTE_COMMANDES = 500
+/** File d’attente staff + historique récent. Pas toute la table. */
+const LIMITE_LISTE_OUVERTES = 400
+const LIMITE_LISTE_CLIENT = 80
+const FENETRE_HISTO_MS = 90 * 24 * 3600 * 1000
 
 export async function listerCommandesClient(clientId: string) {
   const orders = await prisma.order.findMany({
     where: { clientId },
     include: orderInclude,
     orderBy: { createdAt: 'desc' },
-    take: LIMITE_LISTE_COMMANDES,
+    take: LIMITE_LISTE_CLIENT,
   })
   return orders.map(mapOrder)
 }
 
 export async function listerToutesCommandes() {
-  const orders = await prisma.order.findMany({
-    include: orderInclude,
-    orderBy: { createdAt: 'desc' },
-    take: LIMITE_LISTE_COMMANDES,
-  })
-  return orders.map(mapOrder)
+  const depuis = new Date(Date.now() - FENETRE_HISTO_MS)
+  const [ouvertes, recentes] = await Promise.all([
+    prisma.order.findMany({
+      where: { statut: { in: ['CONFIRMEE', 'PREPAREE', 'EN_LIVRAISON'] } },
+      include: orderInclude,
+      orderBy: { createdAt: 'desc' },
+      take: LIMITE_LISTE_OUVERTES,
+    }),
+    prisma.order.findMany({
+      where: { createdAt: { gte: depuis } },
+      include: orderInclude,
+      orderBy: { createdAt: 'desc' },
+      take: 300,
+    }),
+  ])
+  const parId = new Map<string, (typeof ouvertes)[0]>()
+  for (const o of [...ouvertes, ...recentes]) parId.set(o.id, o)
+  return [...parId.values()]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .map(mapOrder)
 }
 
 function assertModifiable(createdAt: Date, statut: string) {
@@ -344,7 +357,7 @@ export async function annulerCommande(
       include: { items: true },
     })
     if (!order) throw new NotFoundError('Commande introuvable')
-    if (clientId && order.clientId !== clientId) throw new ForbiddenError()
+    if (clientId && order.clientId !== clientId) throw new NotFoundError('Commande introuvable')
     if (!admin) assertModifiable(order.createdAt, order.statut)
     if (order.statut === 'ANNULEE') throw new ConflictError('Déjà annulée')
     if (!admin && order.statut !== 'CONFIRMEE') {
@@ -402,7 +415,7 @@ export async function modifierCommande(
       include: { items: true, client: { include: { catalogue: true, paliers: true } } },
     })
     if (!order) throw new NotFoundError('Commande introuvable')
-    if (order.clientId !== clientId) throw new ForbiddenError()
+    if (order.clientId !== clientId) throw new NotFoundError('Commande introuvable')
     if (!opts.admin) assertModifiable(order.createdAt, order.statut)
     if (order.statut === 'ANNULEE') throw new ConflictError('Commande annulée')
     // Même pour la direction : au-delà de CONFIRMEE, la marchandise est
@@ -431,9 +444,6 @@ export async function modifierCommande(
     const client = order.client
     const catalogIds = new Set(client.catalogue.filter((c) => c.visible).map((c) => c.productId))
     const cartons = lignes.reduce((s, l) => s + l.qty, 0)
-    if (cartons < client.minCartons) {
-      throw new ValidationError(`Minimum ${client.minCartons} cartons requis`)
-    }
 
     let totalHT = 0
     const itemsData = []
