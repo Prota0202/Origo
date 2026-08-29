@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { env } from '../../config/env.js'
 import { etatBackup } from '../../lib/backup.js'
 import { etatOdoo } from '../../lib/odoo/sonde.js'
-import { dernierSyncOdoo, synchroniserTout } from '../../lib/odoo/sync.js'
+import { dernierPullStockOdoo, dernierSyncOdoo, synchroniserTout, tirerStocksDepuisOdoo } from '../../lib/odoo/sync.js'
 import { statsVentesOdoo } from '../../lib/odoo/ventes.js'
 import { ValidationError } from '../../lib/errors.js'
 import { requireStaff } from '../../plugins/auth.js'
@@ -14,6 +14,7 @@ export async function odooRoutes(app: FastifyInstance) {
     sonde: etatOdoo(),
     backup: etatBackup(),
     dernierSync: dernierSyncOdoo(),
+    dernierPullStock: dernierPullStockOdoo(),
     commandes: await statsVentesOdoo(),
   }))
 
@@ -31,6 +32,22 @@ export async function odooRoutes(app: FastifyInstance) {
       if (rapport.erreurs.some((e) => e.cible === 'prerequis')) {
         return { ok: false, ...rapport }
       }
+      return { ok: rapport.erreurs.length === 0, ...rapport }
+    },
+  )
+
+  app.post(
+    '/api/v1/odoo/stock',
+    {
+      preHandler: requireStaff('DIRECTION'),
+      config: { rateLimit: { max: 5, timeWindow: '5 minutes' } },
+    },
+    async (req) => {
+      const parsed = z.object({ importerProduits: z.boolean().optional() }).safeParse(req.body ?? {})
+      if (!parsed.success) throw new ValidationError('Corps invalide')
+      const rapport = await tirerStocksDepuisOdoo({
+        importerProduits: parsed.data.importerProduits === true,
+      })
       return { ok: rapport.erreurs.length === 0, ...rapport }
     },
   )

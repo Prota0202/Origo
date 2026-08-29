@@ -16,7 +16,7 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
   const [backup, setBackup] = useState(null)
   const [prelevements, setPrelevements] = useState([])
   const [prelevementMsg, setPrelevementMsg] = useState('')
-  const [syncEnCours, setSyncEnCours] = useState(false)
+  const [syncEnCours, setSyncEnCours] = useState(null)
   const [syncMessage, setSyncMessage] = useState('')
   const [societe, setSociete] = useState({
     name: '',
@@ -123,14 +123,14 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
   }
 
   const pousserVersOdoo = async () => {
-    setSyncEnCours(true)
+    setSyncEnCours('catalogue')
     setSyncMessage('')
     try {
       const rapport = await OdooApi.synchroniser(false)
       setOdoo((prev) => ({ ...(prev ?? {}), dernierSync: rapport, actif: true }))
       if (rapport.ok) {
         setSyncMessage(
-          `Envoyé : ${rapport.produits.crees + rapport.produits.misAJour} produits, ${rapport.clients.crees + rapport.clients.misAJour} clients. Le stock Odoo se met à jour quand tu enregistres une quantité dans Produits.`,
+          `Envoyé : ${rapport.produits.crees + rapport.produits.misAJour} produits, ${rapport.clients.crees + rapport.clients.misAJour} clients. L’autre sens : « Tirer depuis Odoo ».`,
         )
       } else {
         const premiere = rapport.erreurs?.[0]
@@ -139,7 +139,44 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
     } catch (e) {
       setSyncMessage(e.message)
     } finally {
-      setSyncEnCours(false)
+      setSyncEnCours(null)
+    }
+  }
+
+  const alignerStocksDepuisOdoo = async () => {
+    setSyncEnCours('stock')
+    setSyncMessage('')
+    try {
+      const rapport = await OdooApi.alignerStocks()
+      setOdoo((prev) => ({ ...(prev ?? {}), dernierPullStock: rapport, actif: true }))
+      if (rapport.ok) {
+        const parties = []
+        if (rapport.produitsCrees > 0) {
+          parties.push(
+            `${rapport.produitsCrees} produit(s) créé(s) depuis Odoo (inactifs) — activer dans Produits, vérifier pièces/carton, puis les rendre visibles aux restos`,
+          )
+        }
+        if (rapport.produitsLies > 0) {
+          parties.push(`${rapport.produitsLies} fiche(s) reliée(s) par SKU`)
+        }
+        if (rapport.desactives > 0) {
+          parties.push(`${rapport.desactives} produit(s) retiré(s) (archivés dans Odoo)`)
+        }
+        if (rapport.alignes > 0) {
+          parties.push(`${rapport.alignes} stock(s) mis à jour`)
+        } else if (rapport.lus > 0) {
+          parties.push(`stocks déjà alignés (${rapport.lus} lié(s))`)
+        }
+        setSyncMessage(parties.length > 0 ? `${parties.join('. ')}.` : 'Rien à tirer depuis Odoo.')
+        onRefresh?.()
+      } else {
+        const premiere = rapport.erreurs?.[0]
+        setSyncMessage(premiere ? `${premiere.cible} : ${premiere.message}` : 'Alignement stocks incomplet.')
+      }
+    } catch (e) {
+      setSyncMessage(e.message)
+    } finally {
+      setSyncEnCours(null)
     }
   }
 
@@ -263,6 +300,14 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
                     : 'Configuré, sonde en cours'
                 : 'Non configuré — ORIGO fonctionne seul'}
             </p>
+            {odoo.dernierPullStock?.fin && (
+              <p className="ligne-detail">
+                Dernier alignement stocks : {new Date(odoo.dernierPullStock.fin).toLocaleString('fr-BE')}
+                {typeof odoo.dernierPullStock.alignes === 'number'
+                  ? ` · ${odoo.dernierPullStock.alignes} modifié(s)`
+                  : ''}
+              </p>
+            )}
             {syncMessage && <p className="ligne-detail">{syncMessage}</p>}
             {(odoo.commandes?.erreurs > 0 || odoo.commandes?.attente > 0) && (
               <p className="ligne-detail">
@@ -273,15 +318,26 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
             )}
           </div>
           {odoo.actif && (
-            <button
-              className="btn btn-secondary"
-              style={{ minHeight: 40 }}
-              disabled={syncEnCours}
-              onClick={pousserVersOdoo}
-            >
-              <RefreshCw size={16} aria-hidden="true" />
-              {syncEnCours ? 'Envoi…' : 'Envoyer le catalogue'}
-            </button>
+            <div className="admin-actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ minHeight: 40 }}
+                disabled={Boolean(syncEnCours)}
+                onClick={pousserVersOdoo}
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+                {syncEnCours === 'catalogue' ? 'Envoi…' : 'Envoyer le catalogue'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ minHeight: 40 }}
+                disabled={Boolean(syncEnCours)}
+                onClick={alignerStocksDepuisOdoo}
+              >
+                <Package size={16} aria-hidden="true" />
+                {syncEnCours === 'stock' ? 'Alignement…' : 'Tirer depuis Odoo'}
+              </button>
+            </div>
           )}
         </div>
       )}

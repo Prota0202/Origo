@@ -164,7 +164,10 @@ export function ProduitForm({ produit, categories, onSave, onClose }) {
 /* ---------- Onglet Produits ---------- */
 export function AdminProduits({ produits, setProduits, clients, setClients, onRefresh }) {
   const [form, setForm] = useState(null)
-  const categories = [...new Set(produits.map((p) => p.categorie))]
+  const [voirInactifs, setVoirInactifs] = useState(false)
+  const actifs = produits.filter((p) => p.actif !== false)
+  const inactifs = produits.filter((p) => p.actif === false)
+  const categories = [...new Set(actifs.map((p) => p.categorie))]
 
   const enregistrer = async (p) => {
     try {
@@ -192,9 +195,18 @@ export function AdminProduits({ produits, setProduits, clients, setClients, onRe
   }
 
   const supprimer = async (p) => {
-    if (!window.confirm(`Désactiver « ${p.nom} » du catalogue ?`)) return
+    if (!window.confirm(`Retirer « ${p.nom} » du catalogue ?`)) return
     try {
-      await ProductsApi.update(p.id, { actif: false })
+      await ProductsApi.remove(p.id)
+      await onRefresh?.()
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
+  const reactiver = async (p) => {
+    try {
+      await ProductsApi.update(p.id, { actif: true })
       await onRefresh?.()
     } catch (e) {
       alert(e.message)
@@ -204,7 +216,11 @@ export function AdminProduits({ produits, setProduits, clients, setClients, onRe
   return (
     <section aria-labelledby="titre-admin-produits">
       <h1 id="titre-admin-produits" className="page-title">Catalogue général</h1>
-      <p className="page-subtitle">{produits.length} produits — visibles uniquement des clients auxquels vous les attribuez</p>
+      <p className="page-subtitle">
+        {actifs.length} produit{actifs.length > 1 ? 's' : ''}
+        {inactifs.length > 0 ? ` · ${inactifs.length} retiré${inactifs.length > 1 ? 's' : ''}` : ''}
+        {' '}— visibles uniquement des clients auxquels vous les attribuez
+      </p>
 
       <button className="btn btn-primary" style={{ marginBottom: 20 }} onClick={() => setForm({ produit: null })}>
         <Plus size={18} aria-hidden="true" /> Ajouter un produit
@@ -213,7 +229,7 @@ export function AdminProduits({ produits, setProduits, clients, setClients, onRe
       {categories.map((cat) => (
         <div key={cat}>
           <h2 className="categorie-titre">{cat}</h2>
-          {produits.filter((p) => p.categorie === cat).map((p) => {
+          {actifs.filter((p) => p.categorie === cat).map((p) => {
             const alerte = (p.stock ?? 0) <= (p.seuilAlerte ?? 10)
             return (
               <article key={p.id} className={`commande-card admin-ligne ${alerte ? 'alerte-stock' : ''}`}>
@@ -243,6 +259,30 @@ export function AdminProduits({ produits, setProduits, clients, setClients, onRe
           })}
         </div>
       ))}
+
+      {inactifs.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <button type="button" className="btn btn-ghost" onClick={() => setVoirInactifs((v) => !v)}>
+            {voirInactifs ? 'Masquer' : 'Voir'} les produits retirés ({inactifs.length})
+          </button>
+          {voirInactifs && inactifs.map((p) => (
+            <article key={p.id} className="commande-card admin-ligne">
+              <div className="ligne-infos">
+                <p className="ligne-nom">
+                  {p.nom}
+                  <span className="statut statut-annulee" style={{ marginLeft: 8, fontSize: 11 }}>retiré</span>
+                </p>
+                <p className="ligne-detail">Conservé pour l’historique des commandes. Invisible aux restos.</p>
+              </div>
+              <div className="admin-actions">
+                <button className="btn btn-secondary" style={{ minHeight: 40 }} onClick={() => reactiver(p)}>
+                  Réactiver
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {form && (
         <ProduitForm produit={form.produit} categories={categories} onSave={enregistrer} onClose={() => setForm(null)} />

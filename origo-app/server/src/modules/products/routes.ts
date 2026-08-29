@@ -5,7 +5,7 @@ import { mapProduct } from '../../lib/mappers.js'
 import { persistImageField, supprimerFichierUpload } from '../../lib/uploads.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { authenticate, requireStaff } from '../../plugins/auth.js'
-import { apresAjustementStock, apresMutationProduit } from '../../lib/odoo/sync.js'
+import { apresAjustementStock, apresMutationProduit, archiverProduitOdoo } from '../../lib/odoo/sync.js'
 
 const productBody = z.object({
   sku: z.string().min(1).optional(),
@@ -111,6 +111,27 @@ export async function productRoutes(app: FastifyInstance) {
     }
     apresMutationProduit(p.id, { alignerStock: d.stock != null && d.stock !== exists.stock })
     return mapProduct(p)
+  })
+
+  app.delete('/api/v1/products/:id', { preHandler: requireStaff('DIRECTION') }, async (req) => {
+    const { id } = req.params as { id: string }
+    const exists = await prisma.product.findUnique({ where: { id } })
+    if (!exists) throw new NotFoundError('Produit introuvable')
+
+    const commandes = await prisma.orderItem.count({ where: { productId: id } })
+    if (commandes > 0) {
+      const p = await prisma.product.update({ where: { id }, data: { actif: false } })
+      if (p.odooId != null) archiverProduitOdoo(p.odooId)
+      return { ok: true, mode: 'desactive' as const, produit: mapProduct(p) }
+    }
+
+    if (exists.odooId != null) archiverProduitOdoo(exists.odooId)
+    if (exists.photoUrl) supprimerFichierUpload(exists.photoUrl)
+    await prisma.$transaction(async (tx) => {
+      await tx.stockMouvement.deleteMany({ where: { productId: id } })
+      await tx.product.delete({ where: { id } })
+    })
+    return { ok: true, mode: 'supprime' as const }
   })
 
   app.post(

@@ -12,6 +12,7 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../../config/env.js'
 import { verifierLiaison } from './rpc.js'
+import { tirerStocksDepuisOdoo } from './sync.js'
 import { rattraperCommandesOdoo } from './ventes.js'
 
 type Etat =
@@ -39,6 +40,9 @@ async function verifier(log: FastifyBaseLogger) {
     etat = { statut: 'ok', version: resultat.version, verifieLe: maintenant }
     void rattraperCommandesOdoo().catch((e) => {
       log.error({ err: e }, 'Odoo : rattrapage des ventes en attente échoué')
+    })
+    void tirerStocksDepuisOdoo({ ignorerSiRecent: true }).catch((e) => {
+      log.error({ err: e }, 'Odoo : alignement des stocks vers ORIGO échoué')
     })
     return
   }

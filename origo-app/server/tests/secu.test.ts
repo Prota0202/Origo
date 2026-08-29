@@ -151,6 +151,49 @@ describe('IDOR / catalogue', () => {
     })
     expect(vuStaff.statusCode).toBe(200)
   })
+
+  it('efface un produit jamais commandé', async () => {
+    const { product, staff } = await creerJeuDeDonnees({ stock: 1 })
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/products/${product.id}`,
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().mode).toBe('supprime')
+    expect(await prisma.product.findUnique({ where: { id: product.id } })).toBeNull()
+  })
+
+  it('désactive un produit déjà commandé au lieu de l’effacer', async () => {
+    const { product, client, staff } = await creerJeuDeDonnees({ stock: 3, minCartons: 1 })
+    const commande = await app.inject({
+      method: 'POST',
+      url: '/api/v1/me/orders',
+      headers: { authorization: `Bearer ${tokenClient(app, client)}` },
+      payload: { lignes: [{ productId: product.id, qty: 1 }], ...SIGNATURE_COMMANDE },
+    })
+    expect(commande.statusCode, commande.body).toBe(200)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/products/${product.id}`,
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().mode).toBe('desactive')
+    const row = await prisma.product.findUniqueOrThrow({ where: { id: product.id } })
+    expect(row.actif).toBe(false)
+  })
+
+  it('refuse la suppression d’un produit par un restaurant', async () => {
+    const { product, client } = await creerJeuDeDonnees({ stock: 1 })
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/products/${product.id}`,
+      headers: { authorization: `Bearer ${tokenClient(app, client)}` },
+    })
+    expect(res.statusCode).toBe(403)
+  })
 })
 
 describe('uploads', () => {

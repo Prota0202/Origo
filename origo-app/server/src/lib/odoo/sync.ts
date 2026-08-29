@@ -1,11 +1,16 @@
 /**
- * Poussée ORIGO → Odoo (produits, partenaires, tarifs fixes).
+ * Catalogue ORIGO → Odoo, et stock dans les deux sens.
  *
  * ORIGO reste la source de vérité pour le resto. Les ventes partent en
  * arrière-plan (`ventes.ts`) : un échec Odoo ne bloque jamais le panier.
- * L'instantané `stock.quant` n'est pas dans « Envoyer le catalogue » : ça
- * écraserait les sorties déjà validées dans Odoo. Un inventaire saisi dans
- * Produits (quantité changée) est poussé à part via `apresAjustementStock`.
+ *
+ * Stock :
+ * - ORIGO → Odoo : inventaire saisi dans Produits (`apresAjustementStock`).
+ *   Pas dans « Envoyer le catalogue », et pas après une commande : le picking
+ *   Odoo baisse déjà le on-hand à la livraison.
+ * - Odoo → ORIGO : `tirerStocksDepuisOdoo` (bouton + sonde). On ne recopie
+ *   pas le on-hand tel quel : l'app a déjà décrémenté les commandes ouvertes
+ *   que Odoo n'a pas encore sorties.
  */
 import type { FastifyBaseLogger } from 'fastify'
 import type { Client, Product } from '@prisma/client'
@@ -28,12 +33,34 @@ export type RapportSync = {
   erreurs: { cible: string; message: string }[]
 }
 
+export type RapportPullStock = {
+  debut: string
+  fin: string
+  lus: number
+  alignes: number
+  inchanges: number
+  produitsCrees: number
+  produitsLies: number
+  desactives: number
+  erreurs: { cible: string; message: string }[]
+}
+
 type Journal = Pick<FastifyBaseLogger, 'error' | 'warn' | 'info'>
 
 let journal: Journal | undefined
 let file: Promise<void> = Promise.resolve()
 let syncEnCours: Promise<RapportSync> | null = null
 let dernierRapport: RapportSync | null = null
+let dernierPull: RapportPullStock | null = null
+
+function enfiler<T>(travail: () => Promise<T>): Promise<T> {
+  const execution = file.then(travail, travail)
+  file = execution.then(
+    () => undefined,
+    () => undefined,
+  )
+  return execution
+}
 
 export function brancherJournalOdoo(log: Journal) {
   journal = log
@@ -43,13 +70,17 @@ export function dernierSyncOdoo() {
   return dernierRapport
 }
 
+export function dernierPullStockOdoo() {
+  return dernierPull
+}
+
 /**
  * Enfile un travail Odoo. Les écritures de listes de prix ne se parallélisent
  * pas : deux `write` concurrentes sur la même pricelist se marchent dessus.
  */
 export function pousserOdooEnArrierePlan(travail: () => Promise<void>) {
   if (!env.odoo.actif) return
-  file = file.then(async () => {
+  void enfiler(async () => {
     try {
       await travail()
     } catch (e) {
@@ -69,6 +100,53 @@ export function apresMutationProduit(productId: string, opts: { alignerStock?: b
 /** Inventaire saisi dans ORIGO → on-hand Odoo. Pas les livraisons (elles bougent déjà le picking). */
 export function apresAjustementStock(productId: string) {
   pousserOdooEnArrierePlan(() => alignerStockOdoo(productId))
+}
+
+/** Archive le modèle Odoo. On n’efface pas : l’historique de vente doit rester. */
+export function archiverProduitOdoo(odooId: number) {
+  pousserOdooEnArrierePlan(async () => {
+    await ecrire(MODELES.produitModele, [odooId], { [CHAMPS.produit.actif]: false })
+  })
+}
+
+/**
+ * Stock vendable ORIGO à partir du on-hand Odoo.
+ *
+ * L'app décrémente dès la commande ; Odoo ne sort qu'au picking. Recopier
+ * le on-hand tel quel re-créditerait des cartons déjà vendus.
+ *
+ * - Odoo ≥ physique app (stock + réservées) : entrée / inventaire chez Odoo.
+ * - sinon : picking déjà sorti, ou inventaire à la baisse → on prend Odoo.
+ */
+export function stockCibleDepuisOdoo(odooOnHand: number, stockOrigo: number, reservees: number) {
+  const odoo = entierStock(odooOnHand)
+  const stock = entierStock(stockOrigo)
+  const reserve = entierStock(reservees)
+  const physiqueOrigo = stock + reserve
+  if (odoo >= physiqueOrigo) return odoo - reserve
+  return odoo
+}
+
+function entierStock(n: number) {
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.round(n))
+}
+
+export async function tirerStocksDepuisOdoo(
+  opts: { ignorerSiRecent?: boolean; importerProduits?: boolean } = {},
+): Promise<RapportPullStock> {
+  if (!env.odoo.actif) {
+    throw new OdooIndisponible('Intégration Odoo non configurée')
+  }
+  if (opts.ignorerSiRecent && dernierPull && !opts.importerProduits) {
+    const age = Date.now() - Date.parse(dernierPull.fin)
+    if (Number.isFinite(age) && age < 2 * 60 * 1000) return dernierPull
+  }
+  const rapport = await enfiler(() =>
+    executerPullStock({ importerProduits: opts.importerProduits === true }),
+  )
+  dernierPull = rapport
+  return rapport
 }
 
 export function apresMutationClient(clientId: string) {
@@ -439,6 +517,299 @@ export async function augmenterStockSiBesoin(varianteId: number, minimum: number
   const actuel = Number(quants[0]?.quantity ?? 0)
   if (actuel >= minimum) return
   await poserStock(varianteId, minimum, ctx.emplacementId)
+}
+
+async function executerPullStock(
+  opts: { importerProduits?: boolean } = {},
+): Promise<RapportPullStock> {
+  const debut = new Date().toISOString()
+  const erreurs: RapportPullStock['erreurs'] = []
+  let produitsCrees = 0
+  let produitsLies = 0
+
+  if (opts.importerProduits) {
+    const importes = await importerProduitsDepuisOdoo()
+    produitsCrees = importes.crees
+    produitsLies = importes.lies
+    erreurs.push(...importes.erreurs)
+  }
+
+  const ctx = await contexteOdoo()
+  const desactives = await desactiverSiArchiveChezOdoo()
+
+  const produits = await prisma.product.findMany({
+    where: { odooVarianteId: { not: null }, actif: true },
+    select: { id: true, sku: true, stock: true, odooVarianteId: true },
+  })
+
+  if (produits.length === 0) {
+    return {
+      debut,
+      fin: new Date().toISOString(),
+      lus: 0,
+      alignes: 0,
+      inchanges: 0,
+      produitsCrees,
+      produitsLies,
+      desactives,
+      erreurs,
+    }
+  }
+
+  const odooParVariante = new Map<number, number>()
+  for (const paquet of parPaquets(
+    produits.map((p) => p.odooVarianteId as number),
+    80,
+  )) {
+    const quants = await chercherLire<{
+      product_id: number | [number, string]
+      quantity: number
+    }>(
+      MODELES.stockDisponible,
+      [
+        [CHAMPS.stock.produit, 'in', paquet],
+        [CHAMPS.stock.emplacement, '=', ctx.emplacementId],
+      ],
+      [CHAMPS.stock.produit, CHAMPS.stock.quantite],
+    )
+    for (const q of quants) {
+      const varianteId = idMany2one(q.product_id)
+      if (varianteId == null) continue
+      odooParVariante.set(
+        varianteId,
+        (odooParVariante.get(varianteId) ?? 0) + entierStock(Number(q.quantity)),
+      )
+    }
+  }
+
+  const reserves = await prisma.orderItem.groupBy({
+    by: ['productId'],
+    where: {
+      productId: { in: produits.map((p) => p.id) },
+      order: { statut: { in: ['CONFIRMEE', 'PREPAREE', 'EN_LIVRAISON'] } },
+    },
+    _sum: { quantiteCartons: true },
+  })
+  const reserveesParProduit = new Map(
+    reserves.map((r) => [r.productId, r._sum.quantiteCartons ?? 0]),
+  )
+
+  let alignes = 0
+  let inchanges = 0
+  for (const p of produits) {
+    if (p.odooVarianteId == null) continue
+    const cible = stockCibleDepuisOdoo(
+      odooParVariante.get(p.odooVarianteId) ?? 0,
+      p.stock,
+      reserveesParProduit.get(p.id) ?? 0,
+    )
+    if (cible === p.stock) {
+      inchanges += 1
+      continue
+    }
+    const delta = cible - p.stock
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.product.update({ where: { id: p.id }, data: { stock: cible } })
+        await tx.stockMouvement.create({
+          data: {
+            productId: p.id,
+            type: 'AJUSTEMENT',
+            quantite: delta,
+            stockApres: cible,
+            note: 'Aligné depuis Odoo',
+          },
+        })
+      })
+      alignes += 1
+    } catch (e) {
+      erreurs.push({ cible: `stock ${p.sku}`, message: messageErreur(e) })
+    }
+  }
+
+  journal?.info(
+    {
+      lus: produits.length,
+      alignes,
+      inchanges,
+      produitsCrees,
+      produitsLies,
+      desactives,
+      erreurs: erreurs.length,
+    },
+    'Odoo : stocks tirés vers ORIGO',
+  )
+
+  return {
+    debut,
+    fin: new Date().toISOString(),
+    lus: produits.length,
+    alignes,
+    inchanges,
+    produitsCrees,
+    produitsLies,
+    desactives,
+    erreurs,
+  }
+}
+
+/** Odoo archivé ou effacé → on retire le produit du catalogue ORIGO (sans casser l’historique). */
+async function desactiverSiArchiveChezOdoo() {
+  const lies = await prisma.product.findMany({
+    where: { odooId: { not: null }, actif: true },
+    select: { id: true, odooId: true },
+  })
+  if (lies.length === 0) return 0
+
+  const actifsChezOdoo = new Set<number>()
+  for (const paquet of parPaquets(
+    lies.map((p) => p.odooId as number),
+    80,
+  )) {
+    const modeles = await chercherLire<{ id: number; active: boolean }>(
+      MODELES.produitModele,
+      [['id', 'in', paquet]],
+      ['id', CHAMPS.produit.actif],
+      { context: { active_test: false } },
+    )
+    for (const m of modeles) {
+      if (m.active) actifsChezOdoo.add(m.id)
+    }
+  }
+
+  let desactives = 0
+  for (const p of lies) {
+    if (p.odooId == null || actifsChezOdoo.has(p.odooId)) continue
+    await prisma.product.update({ where: { id: p.id }, data: { actif: false } })
+    desactives += 1
+  }
+  return desactives
+}
+
+async function importerProduitsDepuisOdoo() {
+  const erreurs: RapportPullStock['erreurs'] = []
+  const existants = await prisma.product.findMany({
+    select: { id: true, sku: true, odooId: true, odooVarianteId: true },
+  })
+  const parSku = new Map(existants.map((p) => [p.sku.toLowerCase(), p]))
+  const idsOdoo = new Set(existants.map((p) => p.odooId).filter((id): id is number => id != null))
+
+  const modeles = await chercherLire<{
+    id: number
+    name: string
+    default_code: string | false
+    list_price: number
+    description_sale: string | false
+    categ_id: [number, string] | false
+    product_variant_id: [number, string] | false
+  }>(
+    MODELES.produitModele,
+    [
+      [CHAMPS.produit.reference, '!=', false],
+      [CHAMPS.produit.actif, '=', true],
+      [CHAMPS.produit.stockable, '=', true],
+    ],
+    [
+      'id',
+      CHAMPS.produit.nom,
+      CHAMPS.produit.reference,
+      CHAMPS.produit.prixCatalogue,
+      CHAMPS.produit.descriptionVente,
+      CHAMPS.produit.categorie,
+      CHAMPS.produit.variante,
+    ],
+    { limit: 300, context: { active_test: true } },
+  )
+
+  let crees = 0
+  let lies = 0
+  for (const t of modeles) {
+    const sku = String(t.default_code || '').trim()
+    if (!sku) continue
+    if (idsOdoo.has(t.id)) continue
+    const variante = idMany2one(t.product_variant_id)
+    if (variante == null) continue
+
+    const deja = parSku.get(sku.toLowerCase())
+    if (deja) {
+      if (deja.odooId == null || deja.odooVarianteId == null) {
+        try {
+          await prisma.product.update({
+            where: { id: deja.id },
+            data: { odooId: t.id, odooVarianteId: variante },
+          })
+          deja.odooId = t.id
+          deja.odooVarianteId = variante
+          idsOdoo.add(t.id)
+          lies += 1
+        } catch (e) {
+          erreurs.push({ cible: `lien ${sku}`, message: messageErreur(e) })
+        }
+      }
+      continue
+    }
+
+    const categorie =
+      (Array.isArray(t.categ_id) ? String(t.categ_id[1]) : '')
+        .split('/')
+        .pop()
+        ?.trim() || 'Odoo'
+    const texteBrut = texteOdoo(t.description_sale)
+    const unitesParCarton = unitesDepuisDescriptionOdoo(texteBrut)
+    const description = descriptionDepuisOdoo(texteBrut)
+    const prix = Number(t.list_price)
+    try {
+      const cree = await prisma.product.create({
+        data: {
+          sku,
+          nom: String(t.name || sku).trim() || sku,
+          description,
+          categorie,
+          unitesParCarton,
+          prixCarton: Number.isFinite(prix) && prix > 0 ? prix : 0,
+          stock: 0,
+          actif: false,
+          odooId: t.id,
+          odooVarianteId: variante,
+        },
+      })
+      parSku.set(sku.toLowerCase(), {
+        id: cree.id,
+        sku: cree.sku,
+        odooId: cree.odooId,
+        odooVarianteId: cree.odooVarianteId,
+      })
+      idsOdoo.add(t.id)
+      crees += 1
+    } catch (e) {
+      erreurs.push({ cible: `produit ${sku}`, message: messageErreur(e) })
+    }
+  }
+
+  return { crees, lies, erreurs }
+}
+
+function texteOdoo(brut: string | false | null | undefined) {
+  return String(brut || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function descriptionDepuisOdoo(texte: string) {
+  return texte.replace(/1 unité Odoo = 1 carton ORIGO \(\d+ pièces\)\.?/gi, '').trim()
+}
+
+function unitesDepuisDescriptionOdoo(description: string) {
+  const m = description.match(/1 carton ORIGO \((\d+) pièces\)/i)
+  const n = m ? Number(m[1]) : 1
+  return Number.isInteger(n) && n > 0 ? n : 1
+}
+
+function parPaquets<T>(items: T[], taille: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += taille) out.push(items.slice(i, i + taille))
+  return out
 }
 
 async function poserStock(varianteId: number, quantite: number, emplacementId: number) {

@@ -12,6 +12,7 @@ import {
   valeursPartenaireOdoo,
   valeursProduitOdoo,
 } from '../src/lib/odoo/mapping.js'
+import { stockCibleDepuisOdoo } from '../src/lib/odoo/sync.js'
 import { creerJeuDeDonnees, PHOTO_LIVRAISON_TEST, prisma, tokenStaff } from './aide.js'
 
 describe('traduction des fiches ORIGO', () => {
@@ -85,6 +86,32 @@ describe('traduction des fiches ORIGO', () => {
   })
 })
 
+describe('stock Odoo → ORIGO', () => {
+  it('garde le disponible app quand Odoo n’a pas encore sorti la commande', () => {
+    expect(stockCibleDepuisOdoo(10, 7, 3)).toBe(7)
+  })
+
+  it('ne reclasse pas le stock après un picking si la commande est encore ouverte', () => {
+    expect(stockCibleDepuisOdoo(7, 7, 3)).toBe(7)
+  })
+
+  it('remonte un inventaire saisi dans Odoo', () => {
+    expect(stockCibleDepuisOdoo(15, 10, 0)).toBe(15)
+    expect(stockCibleDepuisOdoo(15, 7, 3)).toBe(12)
+  })
+
+  it('descend un inventaire à la baisse dans Odoo', () => {
+    expect(stockCibleDepuisOdoo(7, 10, 0)).toBe(7)
+    expect(stockCibleDepuisOdoo(4, 7, 3)).toBe(4)
+    expect(stockCibleDepuisOdoo(0, 5, 0)).toBe(0)
+  })
+
+  it('ignore un on-hand négatif ou non numérique', () => {
+    expect(stockCibleDepuisOdoo(-2, 5, 0)).toBe(0)
+    expect(stockCibleDepuisOdoo(Number.NaN, 5, 0)).toBe(0)
+  })
+})
+
 describe('routes admin Odoo', () => {
   let app: FastifyInstance
 
@@ -120,7 +147,19 @@ describe('routes admin Odoo', () => {
     const corps = res.json()
     expect(corps).toHaveProperty('actif')
     expect(corps).toHaveProperty('sonde')
+    expect(corps).toHaveProperty('dernierPullStock')
     expect(corps.commandes).toEqual({ attente: expect.any(Number), erreurs: expect.any(Number) })
+  })
+
+  it('refuse le pull de stock si Odoo n’est pas configuré', async () => {
+    if (process.env.ODOO_URL) return
+    const { staff } = await creerJeuDeDonnees({ stock: 1 })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/odoo/stock',
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(503)
   })
 
   it('refuse la synchro si Odoo n’est pas configuré', async () => {

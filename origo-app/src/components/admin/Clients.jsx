@@ -163,7 +163,7 @@ export function ClientForm({ client, produits, onSave, onClose }) {
             Cochez les produits visibles par ce client. Laissez le prix vide pour appliquer le tarif catalogue.
             Ajoutez des paliers pour un prix dégressif à partir d'une quantité de votre choix (10, 20…).
           </p>
-          {produits.map((p) => {
+          {produits.filter((p) => p.actif !== false || f.produits.includes(p.id)).map((p) => {
             const actif = f.produits.includes(p.id)
             const paliers = f.paliers?.[p.id] ?? []
             const prixBase = f.prix?.[p.id] !== undefined && f.prix[p.id] !== '' ? Number(f.prix[p.id]) : p.prixCarton

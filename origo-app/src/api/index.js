@@ -18,6 +18,7 @@ export const ProductsApi = {
   list: () => api('/api/v1/products'),
   create: (data) => api('/api/v1/products', { method: 'POST', body: data }),
   update: (id, data) => api(`/api/v1/products/${id}`, { method: 'PATCH', body: data }),
+  remove: (id) => api(`/api/v1/products/${id}`, { method: 'DELETE' }),
   adjustStock: (id, delta, note) =>
     api(`/api/v1/products/${id}/stock-adjust`, { method: 'POST', body: { delta, note } }),
 }
@@ -80,6 +81,8 @@ export const OdooApi = {
   etat: () => api('/api/v1/odoo'),
   synchroniser: (inclureStock = false) =>
     api('/api/v1/odoo/synchroniser', { method: 'POST', body: { inclureStock } }),
+  alignerStocks: () =>
+    api('/api/v1/odoo/stock', { method: 'POST', body: { importerProduits: true } }),
 }
 
 export const SepaApi = {
