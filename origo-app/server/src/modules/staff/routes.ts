@@ -110,4 +110,27 @@ export async function staffRoutes(app: FastifyInstance) {
     }
     return mapStaff(s)
   })
+
+  app.delete('/api/v1/staff/:id', { preHandler: requireStaff('DIRECTION') }, async (req) => {
+    const { id } = req.params as { id: string }
+    const exists = await prisma.staff.findUnique({ where: { id } })
+    if (!exists) throw new NotFoundError('Compte introuvable')
+    if (req.user.typ === 'staff' && req.user.sub === id) {
+      throw new ConflictError('Tu ne peux pas supprimer ton propre compte')
+    }
+    if (exists.role === 'DIRECTION' && exists.actif) {
+      const autres = await compterDirectionActive(id)
+      if (autres === 0) {
+        throw new ConflictError('Impossible de supprimer le dernier compte direction')
+      }
+    }
+
+    await incrementerSession('staff', id)
+    await prisma.$transaction(async (tx) => {
+      await tx.order.updateMany({ where: { livreParId: id }, data: { livreParId: null } })
+      await tx.orderItem.updateMany({ where: { prepareParId: id }, data: { prepareParId: null } })
+      await tx.staff.delete({ where: { id } })
+    })
+    return { ok: true }
+  })
 }

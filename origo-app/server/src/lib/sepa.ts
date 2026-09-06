@@ -1,5 +1,5 @@
 /**
- * Prélèvements SEPA : le 15 et le dernier jour du mois (Europe/Bruxelles).
+ * Prélèvements SEPA : calendrier propre à chaque restaurant (Europe/Bruxelles).
  *
  * Un mandat Stripe (IBAN) est requis. Sans STRIPE_SECRET_KEY, rien n'est
  * débité — les commandes restent dues. Les prélèvements portent sur les
@@ -9,7 +9,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
 import { toNum } from './money.js'
 import { prisma } from './prisma.js'
-import { clePeriode, estJourPrelevement } from './sepa-calendrier.js'
+import { clePeriode, estJourPrelevementClient } from './sepa-calendrier.js'
 import { creerPaiementSepa } from './stripe.js'
 
 const STATUTS_LIVRES = ['LIVREE', 'LIVREE_PARTIELLEMENT'] as const
@@ -22,10 +22,6 @@ export async function lancerPrelevementsSepa(opts: { forcer?: boolean; maintenan
   if (!env.stripe.actif) {
     return { ok: false, raison: 'stripe_inactif', preleves: 0 }
   }
-  if (!opts.forcer && !estJourPrelevement(maintenant)) {
-    return { ok: true, raison: 'pas_le_jour', preleves: 0 }
-  }
-
   const periode = clePeriode(maintenant)
   const clients = await prisma.client.findMany({
     where: {
@@ -38,13 +34,21 @@ export async function lancerPrelevementsSepa(opts: { forcer?: boolean; maintenan
       id: true,
       stripeCustomerId: true,
       stripeSepaPaymentMethodId: true,
+      sepaCalendrier: true,
     },
   })
+
+  const dus = opts.forcer
+    ? clients
+    : clients.filter((c) => estJourPrelevementClient(c.sepaCalendrier, maintenant))
+  if (!opts.forcer && dus.length === 0) {
+    return { ok: true, raison: 'pas_le_jour', preleves: 0, periode }
+  }
 
   let preleves = 0
   const erreurs: { clientId: string; message: string }[] = []
 
-  for (const client of clients) {
+  for (const client of dus) {
     try {
       const fait = await preleverClient(client, periode)
       if (fait) preleves += 1

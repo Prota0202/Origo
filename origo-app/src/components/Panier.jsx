@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Trash2, AlertCircle, Minus, Plus, BadgePercent, Package, FileText } from 'lucide-react'
 import { euros, tarifLigne } from '../data.js'
-import { fraisLivraisonHT, TEXTE_PAIEMENT_SEPA } from '../frais-livraison.js'
+import { fraisLivraisonHT, TEXTE_PAIEMENT_SEPA, TEXTE_PAIEMENT_STRIPE, TEXTE_PAIEMENT_VIREMENT } from '../frais-livraison.js'
 import { useCompany } from '../company.jsx'
 import { ClientsApi } from '../api/index.js'
 import Overlay from './Overlay.jsx'
@@ -257,15 +257,20 @@ export default function Panier({ client, produits, panier, onChange, onClose, on
             </div>
             <p className="ligne-detail">
               {(client.modePaiement ?? 'sepa') === 'stripe'
-                ? 'Paiement par carte à la commande.'
-                : client.sepaMandatOk
-                  ? `${company.textePaiementSepa || TEXTE_PAIEMENT_SEPA} IBAN ••••${client.sepaIbanLast4}.`
-                  : (company.textePaiementSepa || TEXTE_PAIEMENT_SEPA)}
+                ? TEXTE_PAIEMENT_STRIPE
+                : (client.modePaiement ?? 'sepa') === 'virement'
+                  ? TEXTE_PAIEMENT_VIREMENT
+                  : client.sepaMandatOk
+                    ? `${company.textePaiementSepa || TEXTE_PAIEMENT_SEPA} ${client.sepaCalendrierLibelle ? `(${client.sepaCalendrierLibelle})` : ''} IBAN ••••${client.sepaIbanLast4}.`
+                    : (company.textePaiementSepa || TEXTE_PAIEMENT_SEPA)}
             </p>
             {mandatRequis && (
               <div className="alerte-min" role="alert">
                 <AlertCircle size={18} aria-hidden="true" />
-                <span>Signez le mandat SEPA (IBAN) une fois : ensuite ORIGO prélèvera le 15 et le dernier jour du mois.</span>
+                <span>
+                  Signez le mandat SEPA (IBAN) une fois : ensuite ORIGO prélèvera
+                  {client.sepaCalendrierLibelle ? ` ${client.sepaCalendrierLibelle}` : ' aux dates convenues'}.
+                </span>
               </div>
             )}
             {mandatRequis ? (

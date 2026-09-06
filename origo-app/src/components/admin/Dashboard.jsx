@@ -187,7 +187,7 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
       if (r.raison === 'stripe_inactif') {
         setPrelevementMsg('Stripe n’est pas configuré : aucun prélèvement ne part. Coller STRIPE_SECRET_KEY dans .env.prod puis redéployer.')
       } else if (r.raison === 'pas_le_jour') {
-        setPrelevementMsg('Pas un jour de prélèvement (15 ou fin de mois). « Forcer » lance quand même, pour un test.')
+        setPrelevementMsg('Aucun resto n’a de prélèvement prévu aujourd’hui. « Forcer » lance quand même, pour un test.')
       } else {
         setPrelevementMsg(`${r.preleves} prélèvement(s) lancé(s)${r.periode ? ` (${r.periode})` : ''}.`)
       }
@@ -346,7 +346,7 @@ export function Dashboard({ produits, clients, setClients, commandesGlobales, de
         <p className="ligne-nom">Prélèvements SEPA</p>
         <p className="ligne-detail" style={{ marginBottom: 12 }}>
           {company.paiementStripeActif
-            ? 'Le 15 et le dernier jour du mois (Bruxelles), ORIGO prélève les commandes livrées non payées. Le resto doit avoir signé le mandat IBAN.'
+            ? 'ORIGO prélève les commandes livrées non payées aux dates que tu as fixées pour chaque resto (Clients). Le resto doit avoir signé le mandat IBAN.'
             : 'Stripe n’est pas encore configuré : rien n’est débité. Après les clés dans .env.prod, les restos signent le mandat dans le panier.'}
         </p>
         {prelevementMsg && <p className="ligne-detail">{prelevementMsg}</p>}

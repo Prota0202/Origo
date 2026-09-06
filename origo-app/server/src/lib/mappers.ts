@@ -9,6 +9,7 @@ import type {
   StatutCommande,
 } from '@prisma/client'
 import { toNum } from './money.js'
+import { libelleCalendrierSepa, normaliserCalendrierSepa } from './sepa-calendrier.js'
 import { photoForList } from './uploads.js'
 
 /** Statuts API → libellés UI front existants */
@@ -64,6 +65,7 @@ export function mapClient(
     favoris?: { productId: string }[]
     notes?: { productId: string; texte: string }[]
     paliers?: { productId: string; seuil: number; prix: unknown }[]
+    sepaCalendrier?: unknown
   },
 ) {
   const prix: Record<string, number> = {}
@@ -92,6 +94,8 @@ export function mapClient(
     numeroTva: c.numeroTva,
     minCartons: c.minCartons,
     modePaiement: c.modePaiement ?? 'sepa',
+    sepaCalendrier: c.modePaiement === 'sepa' ? normaliserCalendrierSepa(c.sepaCalendrier) : null,
+    sepaCalendrierLibelle: c.modePaiement === 'sepa' ? libelleCalendrierSepa(c.sepaCalendrier) : '',
     sepaMandatOk: Boolean(c.stripeSepaPaymentMethodId),
     sepaIbanLast4: c.sepaIbanLast4 ?? '',
     actif: c.actif,

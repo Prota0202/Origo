@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, UserX, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserX, X } from 'lucide-react'
 import { StaffApi } from '../../api/index.js'
 import { useCompany } from '../../company.jsx'
 import Overlay from '../Overlay.jsx'
@@ -131,6 +131,16 @@ export function AdminEquipe() {
     }
   }
 
+  const supprimer = async (s) => {
+    if (!window.confirm(`Supprimer définitivement « ${s.nom} » (${s.code}) ? Tu pourras recréer le même code.`)) return
+    try {
+      await StaffApi.remove(s.id)
+      await charger()
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
   return (
     <section aria-labelledby="titre-equipe">
       <h1 id="titre-equipe" className="page-title">Équipe</h1>
@@ -161,6 +171,9 @@ export function AdminEquipe() {
                 <UserX size={18} />
               </button>
             )}
+            <button className="icon-btn icon-btn-gris" onClick={() => supprimer(s)} aria-label={`Supprimer ${s.nom}`}>
+              <Trash2 size={18} />
+            </button>
           </div>
         </article>
       ))}

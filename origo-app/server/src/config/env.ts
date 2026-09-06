@@ -102,7 +102,7 @@ export const env = {
   company: {
     name: process.env.COMPANY_NAME ?? 'ORIGO',
     address: process.env.COMPANY_ADDRESS ?? 'Avenue des Anciens Combattants 23, 1140 Evere',
-    email: process.env.COMPANY_EMAIL ?? 'pro@origo.be',
+    email: process.env.COMPANY_EMAIL ?? 'mehdi@origobrussels.be',
     phone: process.env.COMPANY_PHONE ?? '+32 468 08 96 03',
     vat: process.env.COMPANY_VAT ?? '',
     tvaRate: Number(process.env.TVA_RATE ?? '0.21'),

@@ -6,8 +6,10 @@ import { assertMotDePasseAcceptable } from '../../lib/mot-de-passe.js'
 import { mapClient } from '../../lib/mappers.js'
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js'
 import { requireStaff } from '../../plugins/auth.js'
-import { apresMutationClient } from '../../lib/odoo/sync.js'
+import { apresMutationClient, archiverPartenaireOdoo } from '../../lib/odoo/sync.js'
 import { incrementerSession, oublierSession } from '../../lib/session.js'
+import { supprimerFichierUpload } from '../../lib/uploads.js'
+import { CALENDRIER_SEPA_DEFAUT, normaliserCalendrierSepa } from '../../lib/sepa-calendrier.js'
 
 const clientInclude = {
   catalogue: true,
@@ -26,7 +28,8 @@ const createClientSchema = z.object({
   adresse: z.string().min(5, 'Adresse de livraison requise'),
   numeroTva: z.string().optional(),
   minCartons: z.number().int().positive().optional(),
-  modePaiement: z.enum(['sepa', 'stripe']).optional(),
+  modePaiement: z.enum(['sepa', 'stripe', 'virement']).optional(),
+  sepaCalendrier: z.unknown().optional(),
   /** IDs produits du catalogue initial */
   productIds: z.array(z.string()).optional(),
 })
@@ -71,6 +74,10 @@ export async function clientRoutes(app: FastifyInstance) {
         numeroTva: data.numeroTva,
         minCartons: data.minCartons ?? 5,
         modePaiement: data.modePaiement ?? 'sepa',
+        sepaCalendrier:
+          (data.modePaiement ?? 'sepa') === 'sepa'
+            ? normaliserCalendrierSepa(data.sepaCalendrier ?? CALENDRIER_SEPA_DEFAUT)
+            : undefined,
         catalogue: data.productIds?.length
           ? {
               create: data.productIds.map((productId) => ({ productId, visible: true })),
@@ -93,7 +100,8 @@ export async function clientRoutes(app: FastifyInstance) {
       adresse: z.string().nullable().optional(),
       numeroTva: z.string().nullable().optional(),
       minCartons: z.number().int().positive().optional(),
-      modePaiement: z.enum(['sepa', 'stripe']).optional(),
+      modePaiement: z.enum(['sepa', 'stripe', 'virement']).optional(),
+      sepaCalendrier: z.unknown().optional(),
       actif: z.boolean().optional(),
       motDePasse: z.string().min(1).optional(),
     })
@@ -116,6 +124,9 @@ export async function clientRoutes(app: FastifyInstance) {
         ...(d.numeroTva !== undefined && { numeroTva: d.numeroTva }),
         ...(d.minCartons != null && { minCartons: d.minCartons }),
         ...(d.modePaiement != null && { modePaiement: d.modePaiement }),
+        ...(d.sepaCalendrier !== undefined && {
+          sepaCalendrier: normaliserCalendrierSepa(d.sepaCalendrier),
+        }),
         ...(d.actif != null && { actif: d.actif }),
         ...(d.motDePasse && {
           motDePasseHash: await hasherMotDePasse(d.motDePasse),
@@ -131,6 +142,36 @@ export async function clientRoutes(app: FastifyInstance) {
     }
     apresMutationClient(c.id)
     return mapClient(c)
+  })
+
+  app.delete('/api/v1/clients/:id', { preHandler: requireStaff('DIRECTION') }, async (req) => {
+    const { id } = req.params as { id: string }
+    const exists = await prisma.client.findUnique({ where: { id } })
+    if (!exists) throw new NotFoundError('Client introuvable')
+
+    await incrementerSession('client', id)
+    if (exists.odooId != null) archiverPartenaireOdoo(exists.odooId)
+
+    const commandes = await prisma.order.findMany({
+      where: { clientId: id },
+      select: { id: true, photoLivraisonUrl: true, signatureImageUrl: true },
+    })
+    const ids = commandes.map((o) => o.id)
+    for (const o of commandes) {
+      supprimerFichierUpload(o.photoLivraisonUrl)
+      supprimerFichierUpload(o.signatureImageUrl)
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (ids.length > 0) {
+        await tx.stockMouvement.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } })
+        await tx.order.updateMany({ where: { id: { in: ids } }, data: { prelevementSepaId: null } })
+        await tx.order.deleteMany({ where: { clientId: id } })
+      }
+      await tx.prelevementSepa.deleteMany({ where: { clientId: id } })
+      await tx.client.delete({ where: { id } })
+    })
+    return { ok: true }
   })
 
   /** Remplace le catalogue + prix négociés d'un client */

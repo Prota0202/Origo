@@ -64,7 +64,7 @@ services:
       ODOO_API_KEY: ${ODOO_API_KEY:-}
       COMPANY_NAME: ${COMPANY_NAME:-ORIGO}
       COMPANY_ADDRESS: ${COMPANY_ADDRESS:-Avenue des Anciens Combattants 23, 1140 Evere}
-      COMPANY_EMAIL: ${COMPANY_EMAIL:-pro@origo.be}
+      COMPANY_EMAIL: ${COMPANY_EMAIL:-mehdi@origobrussels.be}
       COMPANY_PHONE: ${COMPANY_PHONE:-+32 468 08 96 03}
       COMPANY_VAT: ${COMPANY_VAT:-}
       TVA_RATE: ${TVA_RATE:-0.21}

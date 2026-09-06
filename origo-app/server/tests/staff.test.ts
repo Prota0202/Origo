@@ -58,6 +58,71 @@ describe('comptes staff et fiche société', () => {
     expect(res.statusCode).toBe(409)
   })
 
+  it('refuse de supprimer le dernier compte direction', async () => {
+    const { staff } = await creerJeuDeDonnees({ stock: 1 })
+    await prisma.staff.updateMany({
+      where: { role: 'DIRECTION', id: { not: staff.id } },
+      data: { actif: false },
+    })
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/staff/${staff.id}`,
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(409)
+  })
+
+  it('supprime un livreur et libère son code', async () => {
+    const { staff, livreur } = await creerJeuDeDonnees({ stock: 1 })
+    const code = livreur.code
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/staff/${livreur.id}`,
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(await prisma.staff.findUnique({ where: { id: livreur.id } })).toBeNull()
+    const recreate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff',
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+      payload: {
+        code,
+        nom: 'Livreur réinstallé',
+        role: 'livreur',
+        motDePasse: 'motdepasse-test',
+      },
+    })
+    expect(recreate.statusCode, recreate.body).toBe(200)
+  })
+
+  it('supprime un client et permet de recréer le même code', async () => {
+    const { staff, client } = await creerJeuDeDonnees({ stock: 1 })
+    const code = client.code
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/clients/${client.id}`,
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(await prisma.client.findUnique({ where: { id: client.id } })).toBeNull()
+    const recreate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/clients',
+      headers: { authorization: `Bearer ${tokenStaff(app, staff)}` },
+      payload: {
+        code,
+        nom: 'Resto réinstallé',
+        motDePasse: 'motdepasse-test',
+        telephone: '+32 2 000 00 00',
+        adresse: 'Rue de Test 1, 1000 Bruxelles',
+        modePaiement: 'virement',
+      },
+    })
+    expect(recreate.statusCode, recreate.body).toBe(200)
+    expect(recreate.json().modePaiement).toBe('virement')
+  })
+
   it('masque le placeholder TVA sur GET /company', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/company' })
     expect(res.statusCode).toBe(200)

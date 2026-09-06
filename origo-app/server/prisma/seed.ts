@@ -237,7 +237,7 @@ async function main() {
       id: 'origo',
       nom: 'ORIGO',
       adresse: 'Avenue des Anciens Combattants 23, 1140 Evere',
-      email: 'pro@origo.be',
+      email: 'mehdi@origobrussels.be',
       telephone: '+32 468 08 96 03',
       numeroTva: '',
       horaires: 'Lun – Ven · 8h00 – 18h00',
@@ -245,7 +245,7 @@ async function main() {
     update: {
       nom: 'ORIGO',
       adresse: 'Avenue des Anciens Combattants 23, 1140 Evere',
-      email: 'pro@origo.be',
+      email: 'mehdi@origobrussels.be',
       telephone: '+32 468 08 96 03',
       numeroTva: '',
       horaires: 'Lun – Ven · 8h00 – 18h00',

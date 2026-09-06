@@ -15,7 +15,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Change ce cacheId à chaque fois qu'un vieux téléphone reste coincé
         // sur l'ancienne PWA après un déploiement.
-        cacheId: 'origo-20260829-suppr-produits',
+        cacheId: 'origo-20260906-comptes-sepa',
         navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
       },
       manifest: {

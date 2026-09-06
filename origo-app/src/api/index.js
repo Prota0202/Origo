@@ -27,6 +27,7 @@ export const ClientsApi = {
   list: () => api('/api/v1/clients'),
   create: (data) => api('/api/v1/clients', { method: 'POST', body: data }),
   update: (id, data) => api(`/api/v1/clients/${id}`, { method: 'PATCH', body: data }),
+  remove: (id) => api(`/api/v1/clients/${id}`, { method: 'DELETE' }),
   setCatalogue: (id, entries) =>
     api(`/api/v1/clients/${id}/catalogue`, { method: 'PUT', body: { entries } }),
   setPaliers: (id, productId, paliers) =>
@@ -75,6 +76,7 @@ export const StaffApi = {
   list: () => api('/api/v1/staff'),
   create: (data) => api('/api/v1/staff', { method: 'POST', body: data }),
   update: (id, data) => api(`/api/v1/staff/${id}`, { method: 'PATCH', body: data }),
+  remove: (id) => api(`/api/v1/staff/${id}`, { method: 'DELETE' }),
 }
 
 export const OdooApi = {

@@ -5,7 +5,7 @@ import { CGV_DEFAUT, TEXTE_PAIEMENT_SEPA, normaliserCgv } from './frais-livraiso
 const defaults = {
   name: 'ORIGO',
   address: 'Avenue des Anciens Combattants 23, 1140 Evere',
-  email: 'pro@origo.be',
+  email: 'mehdi@origobrussels.be',
   phone: '+32 468 08 96 03',
   phoneLink: 'tel:+32468089603',
   vat: '',

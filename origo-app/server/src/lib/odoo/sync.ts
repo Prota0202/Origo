@@ -109,6 +109,12 @@ export function archiverProduitOdoo(odooId: number) {
   })
 }
 
+export function archiverPartenaireOdoo(odooId: number) {
+  pousserOdooEnArrierePlan(async () => {
+    await ecrire(MODELES.partenaire, [odooId], { [CHAMPS.partenaire.actif]: false })
+  })
+}
+
 /**
  * Stock vendable ORIGO à partir du on-hand Odoo.
  *

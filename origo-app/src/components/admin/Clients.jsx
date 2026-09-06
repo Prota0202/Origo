@@ -6,13 +6,140 @@ import { slug } from './utils.js'
 import { useCompany } from '../../company.jsx'
 import Overlay from '../Overlay.jsx'
 
+const CAL_DEFAUT = { type: 'jours_mois', jours: [15, -1] }
+const JOURS_FR = [
+  { id: 1, label: 'lundi' },
+  { id: 2, label: 'mardi' },
+  { id: 3, label: 'mercredi' },
+  { id: 4, label: 'jeudi' },
+  { id: 5, label: 'vendredi' },
+  { id: 6, label: 'samedi' },
+  { id: 7, label: 'dimanche' },
+]
+
+function calendrierInitial(client) {
+  return client?.sepaCalendrier ?? CAL_DEFAUT
+}
+
+function CalendrierSepaChamp({ valeur, jourMoisAjout, setJourMoisAjout, onChange }) {
+  const cal = valeur ?? CAL_DEFAUT
+  const jours = cal.type === 'jours_mois' ? cal.jours ?? [15, -1] : [15, -1]
+
+  const changerType = (type) => {
+    if (type === 'hebdo') onChange({ type: 'hebdo', jour: 1 })
+    else if (type === 'intervalle') {
+      const aujourdHui = new Date().toISOString().slice(0, 10)
+      onChange({ type: 'intervalle', jours: 21, depuis: aujourdHui })
+    } else onChange({ type: 'jours_mois', jours: [15, -1] })
+  }
+
+  const toggleJourMois = (n) => {
+    const next = jours.includes(n) ? jours.filter((j) => j !== n) : [...jours, n]
+    onChange({ type: 'jours_mois', jours: next.length > 0 ? next : [15] })
+  }
+
+  const ajouterJour = () => {
+    const n = Number(jourMoisAjout)
+    if (!Number.isInteger(n) || n < 1 || n > 31) return
+    if (!jours.includes(n)) onChange({ type: 'jours_mois', jours: [...jours, n].sort((a, b) => a - b) })
+    setJourMoisAjout('')
+  }
+
+  return (
+    <div className="champ" style={{ marginBottom: 12 }}>
+      <span>Dates de prélèvement</span>
+      <select value={cal.type} onChange={(e) => changerType(e.target.value)}>
+        <option value="jours_mois">Jours du mois (1×, 2×…)</option>
+        <option value="hebdo">1× par semaine</option>
+        <option value="intervalle">Tous les N jours (ex. 3 semaines)</option>
+      </select>
+      {cal.type === 'jours_mois' && (
+        <div style={{ marginTop: 8 }}>
+          <p className="ligne-detail" style={{ marginBottom: 6 }}>Coche les jours. « Fin de mois » = dernier jour civil.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            {[1, 15].map((n) => (
+              <label key={n} className="check-label" style={{ margin: 0 }}>
+                <input type="checkbox" checked={jours.includes(n)} onChange={() => toggleJourMois(n)} />
+                <span>le {n}</span>
+              </label>
+            ))}
+            <label className="check-label" style={{ margin: 0 }}>
+              <input type="checkbox" checked={jours.includes(-1)} onChange={() => toggleJourMois(-1)} />
+              <span>fin de mois</span>
+            </label>
+          </div>
+          <div className="champ-row">
+            <label className="champ">
+              <span>Autre jour (1–31)</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="31"
+                value={jourMoisAjout}
+                onChange={(e) => setJourMoisAjout(e.target.value)}
+              />
+            </label>
+            <button type="button" className="btn btn-ghost" style={{ alignSelf: 'end', minHeight: 40 }} onClick={ajouterJour}>
+              Ajouter
+            </button>
+          </div>
+          {jours.filter((j) => j !== 1 && j !== 15 && j !== -1).length > 0 && (
+            <p className="ligne-detail">
+              Aussi : {jours.filter((j) => j !== 1 && j !== 15 && j !== -1).map((j) => `le ${j}`).join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+      {cal.type === 'hebdo' && (
+        <label className="champ" style={{ marginTop: 8 }}>
+          <span>Jour de la semaine</span>
+          <select value={cal.jour} onChange={(e) => onChange({ type: 'hebdo', jour: Number(e.target.value) })}>
+            {JOURS_FR.map((j) => (
+              <option key={j.id} value={j.id}>{j.label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {cal.type === 'intervalle' && (
+        <div className="champ-row" style={{ marginTop: 8 }}>
+          <label className="champ">
+            <span>Tous les (jours)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="366"
+              value={cal.jours}
+              onChange={(e) => onChange({ ...cal, jours: Number(e.target.value) || 1 })}
+            />
+          </label>
+          <label className="champ">
+            <span>À partir du</span>
+            <input
+              type="date"
+              value={cal.depuis}
+              onChange={(e) => onChange({ ...cal, depuis: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ClientForm({ client, produits, onSave, onClose }) {
   const { mdpMinCaracteres: mdpMin = 12 } = useCompany()
   const [f, setF] = useState(
     client
-      ? { ...client, paliers: client.paliers ?? {} }
-      : { nom: '', ville: '', adresse: '', telephone: '', numeroTva: '', code: '', motDePasse: '', email: '', minCartons: 5, modePaiement: 'sepa', produits: [], prix: {}, paliers: {} }
+      ? { ...client, paliers: client.paliers ?? {}, sepaCalendrier: calendrierInitial(client) }
+      : {
+          nom: '', ville: '', adresse: '', telephone: '', numeroTva: '', code: '', motDePasse: '',
+          email: '', minCartons: 5, modePaiement: 'sepa', sepaCalendrier: CAL_DEFAUT,
+          produits: [], prix: {}, paliers: {},
+        }
   )
+  const [jourMoisAjout, setJourMoisAjout] = useState('')
   const maj = (champ) => (e) => setF({ ...f, [champ]: e.target.value })
 
   const basculerProduit = (id) =>
@@ -150,11 +277,20 @@ export function ClientForm({ client, produits, onSave, onClose }) {
             <label className="champ">
               <span>Paiement</span>
               <select value={f.modePaiement ?? 'sepa'} onChange={maj('modePaiement')}>
-                <option value="sepa">SEPA (prélèvement 15 et fin de mois)</option>
+                <option value="sepa">Domiciliation SEPA (dates au choix)</option>
                 <option value="stripe">Carte (Stripe) à la commande</option>
+                <option value="virement">Virement</option>
               </select>
             </label>
           </div>
+          {(f.modePaiement ?? 'sepa') === 'sepa' && (
+            <CalendrierSepaChamp
+              valeur={f.sepaCalendrier ?? CAL_DEFAUT}
+              jourMoisAjout={jourMoisAjout}
+              setJourMoisAjout={setJourMoisAjout}
+              onChange={(sepaCalendrier) => setF((prev) => ({ ...prev, sepaCalendrier }))}
+            />
+          )}
 
           <h3 className="categorie-titre" style={{ margin: '8px 0 4px' }}>
             Catalogue personnalisé — {f.produits.length} produit(s)
@@ -273,6 +409,7 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
           numeroTva: c.numeroTva,
           minCartons: c.minCartons,
           modePaiement: c.modePaiement ?? 'sepa',
+          sepaCalendrier: c.modePaiement === 'virement' || c.modePaiement === 'stripe' ? undefined : (c.sepaCalendrier ?? CAL_DEFAUT),
           productIds: c.produits,
         })
       } else {
@@ -285,6 +422,7 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
           numeroTva: c.numeroTva,
           minCartons: c.minCartons,
           modePaiement: c.modePaiement ?? 'sepa',
+          sepaCalendrier: c.modePaiement === 'virement' || c.modePaiement === 'stripe' ? undefined : (c.sepaCalendrier ?? CAL_DEFAUT),
           ...(c.motDePasse ? { motDePasse: c.motDePasse } : {}),
         })
       }
@@ -305,9 +443,15 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
   }
 
   const supprimer = async (c) => {
-    if (!window.confirm(`Désactiver le compte « ${c.nom} » ?`)) return
+    if (
+      !window.confirm(
+        `Supprimer définitivement « ${c.nom} » (code ${c.code}) ? Ses commandes ORIGO sont effacées. Tu pourras recréer le même code.`,
+      )
+    ) {
+      return
+    }
     try {
-      await ClientsApi.update(c.id, { actif: false })
+      await ClientsApi.remove(c.id)
       await onRefresh?.()
     } catch (e) {
       alert(e.message)
@@ -337,9 +481,11 @@ export function AdminClients({ produits, clients, setClients, onRefresh }) {
               {` · ${c.produits.length} produits · franco dès 150 € HT`}
               {(c.modePaiement ?? 'sepa') === 'stripe'
                 ? ' · carte'
-                : c.sepaMandatOk
-                  ? ` · SEPA ••••${c.sepaIbanLast4 || 'iban'}`
-                  : ' · SEPA sans mandat'}
+                : (c.modePaiement ?? 'sepa') === 'virement'
+                  ? ' · virement'
+                  : c.sepaMandatOk
+                    ? ` · SEPA ${c.sepaCalendrierLibelle || ''} ••••${c.sepaIbanLast4 || 'iban'}`
+                    : ` · SEPA ${c.sepaCalendrierLibelle || ''} sans mandat`}
               {Object.keys(c.prix ?? {}).length > 0 && ` · ${Object.keys(c.prix).length} prix négocié(s)`}
               {Object.keys(c.paliers ?? {}).length > 0 && ` · ${Object.keys(c.paliers).length} palier(s) de prix`}
             </p>

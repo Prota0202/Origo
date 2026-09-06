@@ -79,8 +79,10 @@ model Client {
   adresse        String?
   numeroTva      String?
   minCartons     Int      @default(5)
-  /// `sepa` (défaut, 15 et fin de mois) ou `stripe` (paiement à la commande).
+  /// `sepa` (domiciliation), `stripe` (carte à la commande), `virement`.
   modePaiement   String   @default("sepa")
+  /// Calendrier de prélèvement SEPA (JSON). Null = 15 et dernier jour du mois.
+  sepaCalendrier Json?
   actif          Boolean  @default(true)
   mdpAChanger    Boolean  @default(false)
   sessionVersion Int      @default(0)

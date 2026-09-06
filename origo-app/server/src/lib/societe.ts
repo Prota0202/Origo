@@ -20,7 +20,8 @@ export async function lireSociete() {
   const row = await prisma.societe.findUnique({ where: { id: 'origo' } })
   const name = row?.nom?.trim() || env.company.name
   const address = row?.adresse?.trim() || env.company.address
-  const email = row?.email?.trim() || env.company.email
+  const emailBrut = row?.email?.trim() || env.company.email
+  const email = emailBrut === 'pro@origo.be' ? 'mehdi@origobrussels.be' : emailBrut
   const phone = row?.telephone?.trim() || env.company.phone
   const vat = tvaAffichable(row?.numeroTva) || tvaAffichable(env.company.vat)
   const horaires = row?.horaires?.trim() || 'Lun – Ven · 8h00 – 18h00'

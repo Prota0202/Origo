@@ -66,7 +66,7 @@ async function main() {
       id: 'origo',
       nom: process.env.COMPANY_NAME?.trim() || 'ORIGO',
       adresse: process.env.COMPANY_ADDRESS?.trim() || 'Avenue des Anciens Combattants 23, 1140 Evere',
-      email: process.env.COMPANY_EMAIL?.trim() || 'pro@origo.be',
+      email: process.env.COMPANY_EMAIL?.trim() || 'mehdi@origobrussels.be',
       telephone: process.env.COMPANY_PHONE?.trim() || '+32 468 08 96 03',
       numeroTva: process.env.COMPANY_VAT?.trim() || '',
       horaires: 'Lun – Ven · 8h00 – 18h00',
